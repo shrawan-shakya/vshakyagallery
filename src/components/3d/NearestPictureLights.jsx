@@ -120,11 +120,11 @@ export default function NearestPictureLights({ artworks, theme }) {
           const dz = art.position[2] - camPos.z;
           const dist = Math.sqrt(dx * dx + dy * dy + dz * dz);
           
-          // Proximity Boost Factor:
-          // Distance <= 1.8m -> 1.55x boost (intensity ~ 32)
-          // Distance >= 6.0m -> 0.70x (intensity ~ 14)
-          const proxFactor = THREE.MathUtils.clamp(1.55 - (dist - 1.8) * 0.18, 0.70, 1.55);
-          slot.goal = (isDark ? 21 : 12) * proxFactor;
+          // Soft Proximity Boost Factor:
+          // Distance <= 1.8m -> 1.30x boost (peak intensity ~ 15.5)
+          // Distance >= 6.0m -> 0.70x (intensity ~ 8.5)
+          const proxFactor = THREE.MathUtils.clamp(1.30 - (dist - 1.8) * 0.12, 0.70, 1.30);
+          slot.goal = (isDark ? 12 : 7.5) * proxFactor;
         }
       }
 
@@ -161,11 +161,11 @@ export default function NearestPictureLights({ artworks, theme }) {
               slot.light = r;
             }}
             target={slot.target}
-            angle={Math.PI / 4.4}
-            penumbra={0.42}
-            distance={12}
-            decay={1.8}
-            color="#fffbf2"
+            angle={Math.PI / 4.8}
+            penumbra={0.88}
+            distance={10}
+            decay={2.0}
+            color="#fdf4e3"
             intensity={0}
           />
         </React.Fragment>
