@@ -48,8 +48,28 @@ export default function HUD({
   const [internalTheme, setInternalTheme] = useState('dark');
   const [showWalkOverlay, setShowWalkOverlay] = useState(false);
   const [hasWalkedOnce, setHasWalkedOnce] = useState(false);
-  const [isTouchDevice, setIsTouchDevice] = useState(false);
-  const [isMusicPlaying, setIsMusicPlaying] = useState(false);
+  const [isMusicPlaying, setIsMusicPlaying] = useState(true);
+
+  // Auto-start ambient music on load & satisfy browser autoplay policies on first interaction
+  useEffect(() => {
+    ambientSoundscape.start();
+    setIsMusicPlaying(true);
+
+    const unlockAudio = () => {
+      ambientSoundscape.start();
+      setIsMusicPlaying(true);
+    };
+
+    window.addEventListener('click', unlockAudio, { once: true });
+    window.addEventListener('keydown', unlockAudio, { once: true });
+    window.addEventListener('touchstart', unlockAudio, { once: true });
+
+    return () => {
+      window.removeEventListener('click', unlockAudio);
+      window.removeEventListener('keydown', unlockAudio);
+      window.removeEventListener('touchstart', unlockAudio);
+    };
+  }, []);
 
   const handleToggleMusic = () => {
     const playing = ambientSoundscape.toggle();
