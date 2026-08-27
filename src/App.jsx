@@ -516,7 +516,6 @@ export default function App() {
         isSeated={isSeated}
         onStandUp={handleStandUp}
         theme={theme}
-        setTheme={setTheme}
         mode={mode}
         isLocked={isLocked}
         hasWalkedOnce={hasWalkedOnce}
