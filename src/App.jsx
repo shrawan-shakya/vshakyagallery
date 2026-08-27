@@ -1,20 +1,76 @@
 import React, { useState, useEffect, Suspense, useRef, useMemo, useCallback } from 'react';
 import { Canvas, useThree } from '@react-three/fiber';
-import { Environment, Loader, Html, PerformanceMonitor, Stats } from '@react-three/drei';
+import { Environment, useProgress, PerformanceMonitor, Stats } from '@react-three/drei';
 import { EffectComposer, Bloom, Vignette } from '@react-three/postprocessing';
 import * as THREE from 'three';
 import { fetchArtworksAPI, fetchRoomsAPI, fetchArtistsAPI, fallbackArtworks } from './data/artworks';
 
-// 3D Loading Fallback component for inside Canvas
-function CanvasLoadingFallback() {
+// Fullscreen Luxury Gallery Splash / Loading Screen Overlay
+function FullscreenGalleryLoader() {
+  const { active, progress, item } = useProgress();
+  const [mounted, setMounted] = useState(true);
+  const [fading, setFading] = useState(false);
+
+  useEffect(() => {
+    if (!active && progress === 100) {
+      setFading(true);
+      const timer = setTimeout(() => {
+        setMounted(false);
+      }, 700); // 700ms fade-out
+      return () => clearTimeout(timer);
+    } else {
+      setMounted(true);
+      setFading(false);
+    }
+  }, [active, progress]);
+
+  if (!mounted) return null;
+
+  const displayPercent = Math.min(Math.max(Math.round(progress), 0), 100);
+  const itemName = item ? item.split('/').pop() : '3D Architecture & Lighting';
+
   return (
-    <Html center className="z-50 pointer-events-none">
-      <div className="flex flex-col items-center justify-center p-6 rounded-2xl bg-black/80 backdrop-blur-md border border-[#D4AF37]/30 text-center font-sans shadow-2xl min-w-64">
-        <div className="w-8 h-8 border-2 border-[#D4AF37] border-t-transparent rounded-full animate-spin mb-3"></div>
-        <div className="text-xs font-bold uppercase tracking-luxury-wide text-[#D4AF37]">Loading Virtual Gallery</div>
-        <div className="text-[10px] text-slate-400 mt-1 font-mono">Initializing 3D Architecture...</div>
+    <div
+      className={`fixed inset-0 z-[100] flex flex-col items-center justify-center bg-[#060608] text-[#FAFAFA] font-sans select-none transition-opacity duration-700 ${
+        fading ? 'opacity-0 pointer-events-none' : 'opacity-100'
+      }`}
+    >
+      {/* Luxury Emblem Logo */}
+      <div className="relative mb-6 flex items-center justify-center">
+        <div className="w-16 h-16 rounded-full border border-[#D4AF37]/30 flex items-center justify-center animate-pulse">
+          <div className="w-10 h-10 border-2 border-[#D4AF37] rotate-45 flex items-center justify-center shadow-[0_0_20px_rgba(212,175,55,0.4)]">
+            <span className="-rotate-45 text-[#D4AF37] font-serif text-base font-extrabold tracking-wider">S</span>
+          </div>
+        </div>
       </div>
-    </Html>
+
+      {/* Brand Title */}
+      <h1 className="font-serif text-2xl font-bold tracking-[0.3em] uppercase text-[#FAFAFA] mb-1">
+        SHAKYA GALLERY
+      </h1>
+      <p className="text-[10px] uppercase tracking-[0.4em] text-[#D4AF37] mb-8 font-mono">
+        Loading 3D Architecture & Masterpieces
+      </p>
+
+      {/* Progress Bar Container */}
+      <div className="w-72 max-w-xs bg-white/5 border border-[#D4AF37]/25 h-2 p-0.5 rounded-none overflow-hidden shadow-inner mb-3">
+        <div
+          className="bg-gradient-to-r from-[#b8952b] via-[#D4AF37] to-[#fff3dc] h-full transition-all duration-300 ease-out shadow-[0_0_12px_rgba(212,175,55,0.8)]"
+          style={{ width: `${Math.max(displayPercent, 4)}%` }}
+        />
+      </div>
+
+      {/* Percentage Counter */}
+      <div className="flex items-center justify-between w-72 text-[11px] font-mono text-slate-400">
+        <span>Loading Exhibition...</span>
+        <span className="text-[#D4AF37] font-bold">{displayPercent}%</span>
+      </div>
+
+      {/* Current Loading Item Name */}
+      <div className="text-[9px] font-mono text-slate-500 max-w-xs truncate mt-2 uppercase tracking-wider">
+        {itemName}
+      </div>
+    </div>
   );
 }
 
@@ -308,6 +364,9 @@ export default function App() {
   return (
     <main className="relative w-screen h-screen bg-[#060608] overflow-hidden select-none" style={{ width: '100vw', height: '100vh' }}>
       
+      {/* Full-screen Luxury Gallery Loading Screen */}
+      <FullscreenGalleryLoader />
+
       {/* 3D R3F Viewport Canvas */}
       <ErrorBoundary>
         <Canvas
@@ -325,7 +384,7 @@ export default function App() {
           className="w-full h-full cursor-grab active:cursor-grabbing"
           style={{ width: '100vw', height: '100vh', display: 'block' }}
         >
-          <Suspense fallback={<CanvasLoadingFallback />}>
+          <Suspense fallback={null}>
             <StaticShadows refreshKey={`${theme}-${currentRoomId}-${artworksList.length}-${currentHallLayout}`} />
             {showStats && <Stats />}
             <PerformanceMonitor
@@ -505,8 +564,6 @@ export default function App() {
         artworks={artworksList}
         onRefreshData={refreshAllData}
       />
-
-      <Loader />
     </main>
   );
 }
