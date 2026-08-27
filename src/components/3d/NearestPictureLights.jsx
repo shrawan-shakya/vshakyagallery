@@ -8,8 +8,8 @@ import { ROOM_H } from '../../constants';
 // renderer never recompiles shaders (a visible stutter), while visitors get
 // genuine specular highlights and wall pools for the art they're actually
 // looking at. The remaining paintings carry the baked wash in ArtworkFrame.
-const SLOT_COUNT = 3;
-const RESCAN_INTERVAL = 0.33;
+const SLOT_COUNT = 4;
+const RESCAN_INTERVAL = 0.25;
 
 export default function NearestPictureLights({ artworks, theme }) {
   const isDark = theme === 'dark';
@@ -54,7 +54,6 @@ export default function NearestPictureLights({ artworks, theme }) {
     scanClock.current += dt;
     if (scanClock.current >= RESCAN_INTERVAL) {
       scanClock.current = 0;
-      const peak = isDark ? 16 : 9.5;
       const ranked = [];
       for (const art of artworks) {
         if (!art || !Array.isArray(art.position)) continue;
@@ -65,10 +64,6 @@ export default function NearestPictureLights({ artworks, theme }) {
       }
       ranked.sort((a, b) => a[0] - b[0]);
 
-      // Assignments are sticky: a slot keeps its artwork while that artwork
-      // remains among the SLOT_COUNT nearest, so harmless rank flips between
-      // two already-lit paintings can't blink the lights. Only genuinely new
-      // arrivals take over vacated slots.
       const topIds = new Set(
         ranked.slice(0, SLOT_COUNT).map(([, art]) => art.id),
       );
@@ -80,7 +75,6 @@ export default function NearestPictureLights({ artworks, theme }) {
           topIds.has(slot.artId)
         ) {
           taken.add(slot.artId);
-          slot.goal = peak;
         } else if (slot.artId && !topIds.has(slot.artId)) {
           // Lost its spot: fade out first; retarget once fully dim
           slot.pendingArtId = true;
@@ -89,12 +83,11 @@ export default function NearestPictureLights({ artworks, theme }) {
           // Back in contention: cancel any queued takeover
           slot.nextArtId = null;
           slot.pendingArtId = null;
-          slot.goal = peak;
         }
       });
 
       slots.forEach((slot) => {
-        if (slot.goal === peak && slot.artId) return;
+        if (slot.artId && !slot.pendingArtId) return;
         const next = ranked.find(([, art]) => !taken.has(art.id));
         if (!next) return;
         taken.add(next[1].id);
@@ -104,7 +97,6 @@ export default function NearestPictureLights({ artworks, theme }) {
           slot.pendingArtId = null;
           placeLight(slot, next[1]);
           slot.level = 0;
-          slot.goal = peak;
         } else if (slot.pendingArtId == null) {
           // Still bright: fade to dark first, retarget next frames
           slot.nextArtId = next[1].id;
@@ -114,13 +106,30 @@ export default function NearestPictureLights({ artworks, theme }) {
       });
     }
 
-    // Fade intensities toward their goals every frame (cheap, smooth handoffs)
-    const damp = 1 - Math.exp(-6 * dt);
-    const peak = isDark ? 16 : 9.5;
+    // Dynamic distance-based intensity calculation & smooth frame dampening
+    const damp = 1 - Math.exp(-8 * dt);
+
     for (const slot of slots) {
       if (!slot.light) continue;
+
+      if (slot.artId && !slot.pendingArtId) {
+        const art = artworks.find((a) => a?.id === slot.artId);
+        if (art && Array.isArray(art.position)) {
+          const dx = art.position[0] - camPos.x;
+          const dy = art.position[1] - camPos.y;
+          const dz = art.position[2] - camPos.z;
+          const dist = Math.sqrt(dx * dx + dy * dy + dz * dz);
+          
+          // Proximity Boost Factor:
+          // Distance <= 1.8m -> 1.55x boost (intensity ~ 32)
+          // Distance >= 6.0m -> 0.70x (intensity ~ 14)
+          const proxFactor = THREE.MathUtils.clamp(1.55 - (dist - 1.8) * 0.18, 0.70, 1.55);
+          slot.goal = (isDark ? 21 : 12) * proxFactor;
+        }
+      }
+
       slot.level += (slot.goal - slot.level) * damp;
-      if (Math.abs(slot.goal - slot.level) < 0.05) slot.level = slot.goal;
+      if (Math.abs(slot.goal - slot.level) < 0.02) slot.level = slot.goal;
 
       // Fully dimmed with a queued takeover: move the light, fade back up
       if (
@@ -132,7 +141,6 @@ export default function NearestPictureLights({ artworks, theme }) {
         if (art) {
           slot.artId = art.id;
           placeLight(slot, art);
-          slot.goal = peak;
         }
         slot.pendingArtId = null;
         slot.nextArtId = null;
@@ -153,11 +161,11 @@ export default function NearestPictureLights({ artworks, theme }) {
               slot.light = r;
             }}
             target={slot.target}
-            angle={Math.PI / 5.2}
-            penumbra={1}
-            distance={10}
-            decay={2}
-            color="#ffffff"
+            angle={Math.PI / 4.4}
+            penumbra={0.42}
+            distance={12}
+            decay={1.8}
+            color="#fffbf2"
             intensity={0}
           />
         </React.Fragment>
