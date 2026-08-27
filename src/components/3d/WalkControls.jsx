@@ -81,7 +81,7 @@ function planAroundBoxes(ax, az, bx, bz, colliders) {
   ];
 }
 
-const SPAWN = { x: 0, y: EYE_HEIGHT, z: 6.5, yaw: Math.PI, pitch: -0.05 };
+const SPAWN = { x: 0, y: EYE_HEIGHT, z: 6.5, yaw: 0, pitch: -0.02 };
 
 // Shortest signed angular difference a→b, wrapped to [-π, π]
 function angleDelta(a, b) {
