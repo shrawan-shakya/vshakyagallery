@@ -14,8 +14,11 @@ import {
   List,
   RefreshCw,
   Layers,
-  Armchair
+  Armchair,
+  Volume2,
+  VolumeX
 } from 'lucide-react';
+import { ambientSoundscape } from '../../utils/ambientAudio';
 
 export default function HUD({
   mode,
@@ -46,6 +49,12 @@ export default function HUD({
   const [showWalkOverlay, setShowWalkOverlay] = useState(false);
   const [hasWalkedOnce, setHasWalkedOnce] = useState(false);
   const [isTouchDevice, setIsTouchDevice] = useState(false);
+  const [isMusicPlaying, setIsMusicPlaying] = useState(false);
+
+  const handleToggleMusic = () => {
+    const playing = ambientSoundscape.toggle();
+    setIsMusicPlaying(playing);
+  };
 
   const currentMode = mode || viewMode || 'orbit';
   const isDark = (externalTheme || internalTheme) === 'dark';
@@ -145,6 +154,19 @@ export default function HUD({
             title="Toggle Gallery lighting theme"
           >
             {isDark ? <Sun className="w-5 h-5 text-[#D4AF37]" /> : <Moon className="w-5 h-5 text-[#D4AF37]" />}
+          </button>
+
+          {/* Ambient Music Soundscape Toggler */}
+          <button 
+            onClick={handleToggleMusic}
+            className={`w-10 h-10 rounded-none backdrop-blur-md border flex items-center justify-center transition-all active:scale-95 shadow-md ${
+              isMusicPlaying 
+                ? 'bg-[#D4AF37] border-[#D4AF37] text-[#111111]' 
+                : 'bg-[#111111]/90 border-[#D4AF37]/30 text-[#FAFAFA] hover:text-[#D4AF37] hover:border-[#D4AF37]'
+            }`}
+            title={isMusicPlaying ? 'Mute ambient gallery soundscape' : 'Play ambient gallery soundscape'}
+          >
+            {isMusicPlaying ? <Volume2 className="w-5 h-5 text-[#111111]" /> : <VolumeX className="w-5 h-5 text-[#D4AF37]" />}
           </button>
 
           {/* Help Button */}
