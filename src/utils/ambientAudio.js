@@ -5,7 +5,7 @@ class GalleryAmbientMusic {
   constructor() {
     this.audio = null;
     this.isPlaying = false;
-    this.targetVolume = 1.0; // 100% Full Volume
+    this.targetVolume = 0.8; // Default 80% Volume
   }
 
   init() {
@@ -38,6 +38,14 @@ class GalleryAmbientMusic {
     this.fadeVolume(0, 800, () => {
       this.audio.pause();
     });
+  }
+
+  setVolume(val) {
+    const clamped = Math.max(0, Math.min(1, val));
+    this.targetVolume = clamped;
+    if (this.audio && this.isPlaying) {
+      this.audio.volume = clamped;
+    }
   }
 
   fadeVolume(targetVol, durationMs, onComplete) {

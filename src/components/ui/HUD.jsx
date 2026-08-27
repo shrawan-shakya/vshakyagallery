@@ -15,6 +15,7 @@ import {
   RefreshCw,
   Layers,
   Armchair,
+  Volume1,
   Volume2,
   VolumeX
 } from 'lucide-react';
@@ -81,6 +82,25 @@ export default function HUD({
       window.removeEventListener('touchstart', unlockAudio);
     };
   }, []);
+
+  const [musicVolume, setMusicVolume] = useState(0.8);
+
+  const handleVolumeChange = (e) => {
+    const val = parseFloat(e.target.value);
+    setMusicVolume(val);
+    ambientSoundscape.setVolume(val);
+    if (val === 0) {
+      if (isMusicPlaying) {
+        ambientSoundscape.stop();
+        setIsMusicPlaying(false);
+      }
+    } else {
+      if (!isMusicPlaying) {
+        ambientSoundscape.start();
+        setIsMusicPlaying(true);
+      }
+    }
+  };
 
   const handleToggleMusic = () => {
     const playing = ambientSoundscape.toggle();
@@ -163,18 +183,40 @@ export default function HUD({
             {isWalkMode ? <Orbit className="w-5 h-5 text-[#D4AF37]" /> : <Footprints className="w-5 h-5 text-[#D4AF37]" />}
           </button>
 
-          {/* Ambient Music Soundscape Toggler */}
-          <button 
-            onClick={handleToggleMusic}
-            className={`w-10 h-10 rounded-none backdrop-blur-md border flex items-center justify-center transition-all active:scale-95 shadow-md ${
-              isMusicPlaying 
-                ? 'bg-[#D4AF37] border-[#D4AF37] text-[#111111]' 
-                : 'bg-[#111111]/90 border-[#D4AF37]/30 text-[#FAFAFA] hover:text-[#D4AF37] hover:border-[#D4AF37]'
-            }`}
-            title={isMusicPlaying ? 'Mute ambient gallery soundscape' : 'Play ambient gallery soundscape'}
-          >
-            {isMusicPlaying ? <Volume2 className="w-5 h-5 text-[#111111]" /> : <VolumeX className="w-5 h-5 text-[#D4AF37]" />}
-          </button>
+          {/* Ambient Music & Volume Controls */}
+          <div className="flex items-center bg-[#111111]/90 backdrop-blur-md border border-[#D4AF37]/30 shadow-md h-10 px-1">
+            <button 
+              onClick={handleToggleMusic}
+              className={`w-8 h-8 rounded-none flex items-center justify-center transition-all active:scale-95 ${
+                isMusicPlaying 
+                  ? 'text-[#D4AF37]' 
+                  : 'text-slate-400 hover:text-[#D4AF37]'
+              }`}
+              title={isMusicPlaying ? 'Mute ambient soundscape' : 'Play ambient soundscape'}
+            >
+              {!isMusicPlaying || musicVolume === 0 ? (
+                <VolumeX className="w-4 h-4 text-slate-500" />
+              ) : musicVolume < 0.5 ? (
+                <Volume1 className="w-4 h-4 text-[#D4AF37]" />
+              ) : (
+                <Volume2 className="w-4 h-4 text-[#D4AF37]" />
+              )}
+            </button>
+
+            <input
+              type="range"
+              min="0"
+              max="1"
+              step="0.05"
+              value={isMusicPlaying ? musicVolume : 0}
+              onChange={handleVolumeChange}
+              className="w-16 sm:w-20 accent-[#D4AF37] h-1 bg-white/20 rounded-none cursor-pointer mx-1.5"
+              title="Adjust volume"
+            />
+            <span className="text-[10px] font-mono text-[#D4AF37] font-bold min-w-7 text-center">
+              {isMusicPlaying ? `${Math.round(musicVolume * 100)}%` : '0%'}
+            </span>
+          </div>
 
           {/* Help Button */}
           <button 
