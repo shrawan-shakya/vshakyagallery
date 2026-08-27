@@ -176,7 +176,7 @@ export default function App() {
   const [isRoomSidebarOpen, setIsRoomSidebarOpen] = useState(false);
 
   const [selectedArtwork, setSelectedArtwork] = useState(null);
-  const [theme, setTheme] = useState('dark');
+  const theme = 'dark';
   const [mode, setMode] = useState('walk'); // 'walk' | 'orbit'
   const [isSeated, setIsSeated] = useState(false);
   const [isLocked, setIsLocked] = useState(false);

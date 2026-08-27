@@ -46,7 +46,6 @@ export default function HUD({
 }) {
   const [showHelp, setShowHelp] = useState(false);
   const [showGuide, setShowGuide] = useState(false);
-  const [internalTheme, setInternalTheme] = useState('dark');
   const [showWalkOverlay, setShowWalkOverlay] = useState(false);
   const [hasWalkedOnce, setHasWalkedOnce] = useState(false);
   const [internalIsTouchDevice, setInternalIsTouchDevice] = useState(false);
@@ -89,22 +88,16 @@ export default function HUD({
   };
 
   const currentMode = mode || viewMode || 'orbit';
-  const isDark = (externalTheme || internalTheme) === 'dark';
+  const isDark = true;
   const isWalkMode = currentMode === 'walk';
 
-  const setTheme = externalSetTheme || setInternalTheme;
   const targetId = focusTarget || focusedArtwork;
   const activeFocusArtwork = typeof targetId === 'object' ? targetId : artworks.find(a => a.id === targetId);
 
-  // Apply light/dark theme class to html element
+  // Force dark theme class on html element
   useEffect(() => {
-    const root = document.documentElement;
-    if (isDark) {
-      root.classList.add('dark');
-    } else {
-      root.classList.remove('dark');
-    }
-  }, [isDark]);
+    document.documentElement.classList.add('dark');
+  }, []);
 
   // First time entering walk mode shows quick tutorial popup
   useEffect(() => {
@@ -168,15 +161,6 @@ export default function HUD({
             title={isWalkMode ? 'Switch back to Orbit view' : 'Switch to Walk mode'}
           >
             {isWalkMode ? <Orbit className="w-5 h-5 text-[#D4AF37]" /> : <Footprints className="w-5 h-5 text-[#D4AF37]" />}
-          </button>
-
-          {/* Theme Toggler */}
-          <button 
-            onClick={() => setTheme(isDark ? 'light' : 'dark')}
-            className="w-10 h-10 rounded-none bg-[#111111]/90 backdrop-blur-md border border-[#D4AF37]/30 text-[#FAFAFA] hover:text-[#D4AF37] hover:border-[#D4AF37] flex items-center justify-center transition-all active:scale-95 shadow-md"
-            title="Toggle Gallery lighting theme"
-          >
-            {isDark ? <Sun className="w-5 h-5 text-[#D4AF37]" /> : <Moon className="w-5 h-5 text-[#D4AF37]" />}
           </button>
 
           {/* Ambient Music Soundscape Toggler */}
