@@ -487,11 +487,11 @@ export default function HUD({
 
             <div className="space-y-1 text-xs text-slate-300 font-mono text-left">
               {[
-                ['MOVE', 'W A S D / ARROWS', true],
-                ['RUN', 'HOLD SHIFT', true],
+                ['WALK', 'W A S D / ARROWS', true],
+                ['FAST STROLL', 'HOLD SHIFT', true],
                 ['LOOK AROUND', 'MOVE MOUSE', true],
-                ['INSPECT PAINTING', 'AIM + CLICK / E', true],
-                ['RELEASE CURSOR', 'ESC', false],
+                ['INSPECT ARTWORK', 'POINT & CLICK / E', true],
+                ['FREE MOUSE', 'ESC', false],
               ].map(([label, value, hasBorder]) => (
                 <div
                   key={label}
@@ -539,17 +539,17 @@ export default function HUD({
           className="fixed left-1/2 bottom-24 -translate-x-1/2 z-30 pointer-events-auto flex items-center gap-2 px-5 py-3 bg-[#111111]/95 backdrop-blur-md border-2 border-[#D4AF37] text-[#FAFAFA] hover:text-[#D4AF37] text-[11px] font-bold uppercase tracking-luxury-wide shadow-2xl transition-all rounded-none animate-bounce-subtle"
         >
           <MousePointerClick className="w-4 h-4 text-[#D4AF37]" />
-          Click screen to lock cursor & walk
+          Click screen to enter gallery stroll
         </button>
       )}
 
-      {/* B. When cursor IS LOCKED: show clear "Press ESC to release cursor" chip */}
+      {/* B. When cursor IS LOCKED: show clear "Press ESC to free mouse pointer" chip */}
       {isWalkMode && !isTouchDevice && isLocked && !selectedArtwork && (
         <div className="fixed left-1/2 top-16 -translate-x-1/2 z-30 pointer-events-none flex items-center gap-2.5 px-4 py-2 bg-[#111111]/90 backdrop-blur-md border border-[#D4AF37]/50 text-[#FAFAFA] text-[11px] font-bold uppercase tracking-luxury-wide shadow-xl rounded-none">
           <kbd className="px-2 py-0.5 bg-[#D4AF37] text-[#111111] font-mono text-[10px] font-extrabold rounded-none shadow">
             ESC
           </kbd>
-          <span className="text-slate-200">Press ESC to release cursor</span>
+          <span className="text-slate-200">Press ESC to free mouse</span>
         </div>
       )}
 
@@ -601,27 +601,27 @@ export default function HUD({
                 ) : (
                   <>
                     <div className="flex justify-between border-b border-white/10 py-1.5">
-                      <span>LOCK CURSOR</span>
+                      <span>START STROLL</span>
                       <span className="text-[#D4AF37] font-bold">CLICK SCREEN</span>
                     </div>
                     <div className="flex justify-between border-b border-white/10 py-1.5">
-                      <span>MOVE</span>
+                      <span>WALK</span>
                       <span className="text-[#D4AF37] font-bold">W A S D / ARROWS</span>
                     </div>
                     <div className="flex justify-between border-b border-white/10 py-1.5">
-                      <span>RUN</span>
+                      <span>FAST STROLL</span>
                       <span className="text-[#D4AF37] font-bold">HOLD SHIFT</span>
                     </div>
                     <div className="flex justify-between border-b border-white/10 py-1.5">
                       <span>LOOK AROUND</span>
-                      <span className="text-[#D4AF37] font-bold">MOVE MOUSE (LOCKED)</span>
+                      <span className="text-[#D4AF37] font-bold">MOVE MOUSE</span>
                     </div>
                     <div className="flex justify-between border-b border-white/10 py-1.5">
-                      <span>INSPECT PAINTING</span>
-                      <span className="text-[#D4AF37] font-bold">AIM CROSSHAIR + CLICK / E</span>
+                      <span>INSPECT ARTWORK</span>
+                      <span className="text-[#D4AF37] font-bold">POINT & CLICK / E</span>
                     </div>
                     <div className="flex justify-between py-1.5">
-                      <span>RELEASE CURSOR</span>
+                      <span>FREE MOUSE</span>
                       <span className="text-[#D4AF37] font-bold">ESC</span>
                     </div>
                   </>
