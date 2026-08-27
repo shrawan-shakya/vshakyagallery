@@ -1,11 +1,11 @@
 // High Quality Gallery Ambient Music Engine
-// Uses HTML5 Audio with local ambient soundscape track + Web Audio API fallback
+// Uses HTML5 Audio with local ambient soundscape track
 
 class GalleryAmbientMusic {
   constructor() {
     this.audio = null;
     this.isPlaying = false;
-    this.targetVolume = 0.55;
+    this.targetVolume = 1.0; // 100% Full Volume
   }
 
   init() {
@@ -24,7 +24,7 @@ class GalleryAmbientMusic {
     if (playPromise !== undefined) {
       playPromise
         .then(() => {
-          this.fadeVolume(this.targetVolume, 1500);
+          this.fadeVolume(this.targetVolume, 1000);
         })
         .catch((err) => {
           console.warn('Autoplay notice (click anywhere on screen to enable audio):', err.message);
@@ -35,7 +35,7 @@ class GalleryAmbientMusic {
   stop() {
     if (!this.audio) return;
     this.isPlaying = false;
-    this.fadeVolume(0, 1000, () => {
+    this.fadeVolume(0, 800, () => {
       this.audio.pause();
     });
   }
