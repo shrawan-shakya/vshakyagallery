@@ -40,6 +40,7 @@ export default function HUD({
   isLocked = false,
   lockFailed = false,
   lockRequestRef,
+  isTouchDevice: externalIsTouchDevice,
   theme: externalTheme,
   setTheme: externalSetTheme,
 }) {
@@ -48,7 +49,18 @@ export default function HUD({
   const [internalTheme, setInternalTheme] = useState('dark');
   const [showWalkOverlay, setShowWalkOverlay] = useState(false);
   const [hasWalkedOnce, setHasWalkedOnce] = useState(false);
+  const [internalIsTouchDevice, setInternalIsTouchDevice] = useState(false);
   const [isMusicPlaying, setIsMusicPlaying] = useState(true);
+
+  const isTouchDevice = externalIsTouchDevice !== undefined ? externalIsTouchDevice : internalIsTouchDevice;
+
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      setInternalIsTouchDevice(
+        'ontouchstart' in window || navigator.maxTouchPoints > 0
+      );
+    }
+  }, []);
 
   // Auto-start ambient music on load & satisfy browser autoplay policies on first interaction
   useEffect(() => {
