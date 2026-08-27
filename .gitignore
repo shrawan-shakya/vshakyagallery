@@ -1,0 +1,22 @@
+# Dependencies
+node_modules/
+
+# Production build
+dist/
+
+# Environment variables
+.env
+.env.local
+.env.*.local
+
+# Database temporary files
+gallery.db-shm
+gallery.db-wal
+
+# Vercel
+.vercel/
+
+# Logs & OS junk
+*.log
+.DS_Store
+Thumbs.db

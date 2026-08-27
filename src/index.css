@@ -1,0 +1,113 @@
+@import "tailwindcss";
+
+@theme {
+  --font-sans: 'Montserrat', sans-serif;
+  --font-serif: 'Cormorant Garamond', serif;
+
+  --color-bone: #FAFAFA;
+  --color-bone-dark: #1E1E1E;
+  --color-soft-black: #1A1A1A;
+  --color-frame-gold: #D4AF37;
+  --color-frame-ebony: #111111;
+  --color-linen: #F2EDE1;
+  
+  --animate-spin-slow: spin 15s linear infinite;
+  --animate-slide-in-left: slide-in-left 0.6s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+  --animate-slide-in-right: slide-in-right 0.6s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+  
+  --animate-audio-bar-1: audio-bar 0.9s ease-in-out infinite alternate;
+  --animate-audio-bar-2: audio-bar 0.6s ease-in-out infinite alternate;
+  --animate-audio-bar-3: audio-bar 1.2s ease-in-out infinite alternate;
+  --animate-audio-bar-4: audio-bar 0.8s ease-in-out infinite alternate;
+}
+
+/* SHAKYA Custom Tracking Utilities */
+.tracking-luxury-tight { letter-spacing: 0.1em; }
+.tracking-luxury-wide { letter-spacing: 0.2em; }
+.tracking-luxury-widest { letter-spacing: 0.3em; }
+.tracking-luxury-extreme { letter-spacing: 0.45em; }
+
+@keyframes slide-in-left {
+  0% { 
+    transform: translateX(-20px); 
+    opacity: 0; 
+  }
+  100% { 
+    transform: translateX(0); 
+    opacity: 1; 
+  }
+}
+
+@keyframes slide-in-right {
+  0% { 
+    transform: translateX(20px); 
+    opacity: 0; 
+  }
+  100% { 
+    transform: translateX(0); 
+    opacity: 1; 
+  }
+}
+
+@keyframes audio-bar {
+  0% { 
+    height: 4px; 
+  }
+  100% { 
+    height: 20px; 
+  }
+}
+
+/* Base resets */
+html, body, #root {
+  margin: 0;
+  padding: 0;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background-color: #0d0d0f;
+  font-family: 'Montserrat', sans-serif;
+  color-scheme: dark;
+}
+
+/* Custom scrollbar utility */
+.custom-scrollbar::-webkit-scrollbar {
+  width: 4px;
+}
+.custom-scrollbar::-webkit-scrollbar-track {
+  background: rgba(255, 255, 255, 0.02);
+  border-radius: 99px;
+}
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background: rgba(212, 175, 55, 0.3);
+  border-radius: 99px;
+}
+.custom-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: rgba(212, 175, 55, 0.6);
+}
+
+/* Scrollbar for the ivory museum-plaque panel */
+.plaque-scrollbar::-webkit-scrollbar {
+  width: 4px;
+}
+.plaque-scrollbar::-webkit-scrollbar-track {
+  background: rgba(0, 0, 0, 0.05);
+  border-radius: 99px;
+}
+.plaque-scrollbar::-webkit-scrollbar-thumb {
+  background: rgba(212, 175, 55, 0.4);
+  border-radius: 99px;
+}
+.plaque-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: rgba(212, 175, 55, 0.7);
+}
+
+/* Writing direction utility for vertical tabs */
+.writing-vertical {
+  writing-mode: vertical-lr;
+}
+
+/* Slow spin helper */
+.animate-spin-slow {
+  animation: spin 15s linear infinite;
+}
