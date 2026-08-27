@@ -186,45 +186,56 @@ export default function HUD({
 
           {/* Standalone Audio Button & Popover Menu */}
           <div className="relative">
+            {/* Click-outside backdrop to dismiss popup when clicking anywhere on screen */}
+            {showVolumeMenu && (
+              <div 
+                className="fixed inset-0 z-40 bg-transparent" 
+                onClick={() => setShowVolumeMenu(false)} 
+              />
+            )}
+
             <button 
-              onClick={() => {
-                handleToggleMusic();
-                setShowVolumeMenu((v) => !v);
-              }}
-              onContextMenu={(e) => {
-                e.preventDefault();
-                setShowVolumeMenu((v) => !v);
-              }}
-              className={`w-10 h-10 rounded-none backdrop-blur-md border flex items-center justify-center transition-all active:scale-95 shadow-md ${
+              onClick={() => setShowVolumeMenu((v) => !v)}
+              className={`w-10 h-10 rounded-none backdrop-blur-md border flex items-center justify-center transition-all active:scale-95 shadow-md relative z-50 ${
                 isMusicPlaying 
-                  ? 'bg-[#D4AF37] border-[#D4AF37] text-[#111111]' 
-                  : 'bg-[#111111]/90 border-[#D4AF37]/30 text-[#FAFAFA] hover:text-[#D4AF37] hover:border-[#D4AF37]'
+                  ? 'bg-[#111111]/90 border-[#D4AF37]/50 text-[#D4AF37]' 
+                  : 'bg-[#111111]/90 border-slate-700 text-slate-500 hover:text-[#D4AF37] hover:border-[#D4AF37]'
               }`}
-              title={isMusicPlaying ? 'Mute/Unmute soundscape (Click to toggle volume menu)' : 'Play ambient soundscape'}
+              title="Audio Controls (Click to adjust volume & mute)"
             >
               {!isMusicPlaying || musicVolume === 0 ? (
-                <VolumeX className={`w-5 h-5 ${isMusicPlaying ? 'text-[#111111]' : 'text-[#D4AF37]'}`} />
+                <VolumeX className="w-5 h-5 text-slate-500" />
               ) : musicVolume < 0.5 ? (
-                <Volume1 className="w-5 h-5 text-[#111111]" />
+                <Volume1 className="w-5 h-5 text-[#D4AF37]" />
               ) : (
-                <Volume2 className="w-5 h-5 text-[#111111]" />
+                <Volume2 className="w-5 h-5 text-[#D4AF37]" />
               )}
             </button>
 
             {/* Popup Volume Menu */}
             {showVolumeMenu && (
-              <div className="absolute right-0 top-12 z-50 bg-[#111111]/95 backdrop-blur-md border border-[#D4AF37]/40 p-3 shadow-2xl flex flex-col gap-2 min-w-44 animate-slide-in-left">
-                <div className="flex items-center justify-between text-[10px] uppercase font-bold text-[#D4AF37] tracking-luxury-wide">
-                  <span>Volume Control</span>
+              <div className="absolute right-0 top-12 z-50 bg-[#111111]/95 backdrop-blur-md border border-[#D4AF37]/40 p-4 shadow-2xl flex flex-col gap-3 min-w-52 animate-slide-in-left">
+                <div className="flex items-center justify-between text-[10px] uppercase font-bold text-[#D4AF37] tracking-luxury-wide border-b border-white/10 pb-2">
+                  <span>Audio Controls</span>
                   <button 
                     onClick={handleToggleMusic}
-                    className="text-[9px] px-1.5 py-0.5 bg-white/10 hover:bg-[#D4AF37] hover:text-[#111111] transition-all text-slate-200 uppercase font-mono"
+                    className={`text-[9px] px-2 py-1 font-mono uppercase font-bold transition-all rounded-none ${
+                      isMusicPlaying 
+                        ? 'bg-[#D4AF37]/20 border border-[#D4AF37] text-[#D4AF37] hover:bg-[#D4AF37] hover:text-[#111111]' 
+                        : 'bg-white/10 text-slate-300 hover:bg-[#D4AF37] hover:text-[#111111]'
+                    }`}
                   >
                     {isMusicPlaying ? 'Mute' : 'Unmute'}
                   </button>
                 </div>
 
-                <div className="flex items-center gap-2 mt-1">
+                <div className="flex flex-col gap-1">
+                  <div className="flex justify-between text-[9px] font-mono text-slate-400">
+                    <span>Volume</span>
+                    <span className="text-[#D4AF37] font-bold">
+                      {isMusicPlaying ? `${Math.round(musicVolume * 100)}%` : 'Muted'}
+                    </span>
+                  </div>
                   <input
                     type="range"
                     min="0"
@@ -232,11 +243,8 @@ export default function HUD({
                     step="0.05"
                     value={isMusicPlaying ? musicVolume : 0}
                     onChange={handleVolumeChange}
-                    className="flex-1 accent-[#D4AF37] h-1.5 bg-white/20 rounded-none cursor-pointer"
+                    className="w-full accent-[#D4AF37] h-1.5 bg-white/20 rounded-none cursor-pointer"
                   />
-                  <span className="text-xs font-mono font-bold text-[#D4AF37] w-8 text-right">
-                    {isMusicPlaying ? `${Math.round(musicVolume * 100)}%` : '0%'}
-                  </span>
                 </div>
               </div>
             )}
