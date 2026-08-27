@@ -106,15 +106,6 @@ export default function HUD({
     }
   }, [isDark]);
 
-  useEffect(() => {
-    const checkTouch = () => {
-      setIsTouchDevice(
-        'ontouchstart' in window || navigator.maxTouchPoints > 0
-      );
-    };
-    checkTouch();
-  }, []);
-
   // First time entering walk mode shows quick tutorial popup
   useEffect(() => {
     if (isWalkMode && !hasWalkedOnce) {
