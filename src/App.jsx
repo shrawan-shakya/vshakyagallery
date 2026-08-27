@@ -7,22 +7,30 @@ import { fetchArtworksAPI, fetchRoomsAPI, fetchArtistsAPI, fallbackArtworks } fr
 
 // Fullscreen Luxury Gallery Splash / Loading Screen Overlay
 function FullscreenGalleryLoader() {
-  const { active, progress, item } = useProgress();
+  const { active, progress, item, loaded, total } = useProgress();
   const [mounted, setMounted] = useState(true);
   const [fading, setFading] = useState(false);
 
   useEffect(() => {
-    if (!active && progress === 100) {
-      setFading(true);
-      const timer = setTimeout(() => {
-        setMounted(false);
-      }, 700); // 700ms fade-out
-      return () => clearTimeout(timer);
-    } else {
-      setMounted(true);
-      setFading(false);
+    const isDone = !active || progress >= 98 || (total > 0 && loaded >= total);
+    if (isDone) {
+      const fadeTimer = setTimeout(() => setFading(true), 300);
+      const unmountTimer = setTimeout(() => setMounted(false), 1000);
+      return () => {
+        clearTimeout(fadeTimer);
+        clearTimeout(unmountTimer);
+      };
     }
-  }, [active, progress]);
+  }, [active, progress, loaded, total]);
+
+  // Safety fallback: Unmount after 3 seconds max so screen can NEVER freeze or stay blank
+  useEffect(() => {
+    const safetyTimer = setTimeout(() => {
+      setFading(true);
+      setTimeout(() => setMounted(false), 700);
+    }, 3000);
+    return () => clearTimeout(safetyTimer);
+  }, []);
 
   if (!mounted) return null;
 
