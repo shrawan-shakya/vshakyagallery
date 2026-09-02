@@ -683,24 +683,24 @@ function NepaleseCarpet({
   // 2. Generate micro-knot wool bump texture
   const knotBumpMap = useMemo(() => createWoolKnotBumpTexture(), []);
 
-  // 3. Compute fringe placements along the short ends
+  // 3. Compute fringe placements along the left and right short/long edges
   const fringeData = useMemo(() => {
     if (!hasFringes) return [];
-    const count = 64; // High-density fringe tassels
+    const count = 64; // High-density white fringe tassels
     const items = [];
-    const span = fringeSide === 'x' ? depth : width;
+    const span = depth; // Always span along depth (Z axis) for Left and Right sides
     const start = -span / 2 + 0.03;
     const step = (span - 0.06) / (count - 1);
 
     for (let i = 0; i < count; i++) {
       const pos = start + i * step;
       const rot = (Math.random() - 0.5) * 0.18;
-      const length = 0.15 + (Math.random() - 0.5) * 0.025;
-      const tint = Math.random() > 0.3 ? '#f7f2e6' : '#ede5d3';
+      const length = 0.16 + (Math.random() - 0.5) * 0.02;
+      const tint = Math.random() > 0.25 ? '#ffffff' : '#faf6eb';
       items.push({ pos, rot, length, tint, id: i });
     }
     return items;
-  }, [hasFringes, fringeSide, width, depth]);
+  }, [hasFringes, depth]);
 
   const halfW = width / 2;
   const halfD = depth / 2;
@@ -741,11 +741,11 @@ function NepaleseCarpet({
         </mesh>
       ))}
 
-      {/* 3. TRADITIONAL HAND-TIED END FRINGES (Ivory wool tassels extending outward) */}
-      {hasFringes && fringeSide === 'x' && (
+      {/* 3. TRADITIONAL HAND-TIED END FRINGES (White wool tassels on LEFT and RIGHT sides) */}
+      {hasFringes && (
         <>
-          {/* Left End Fringes */}
-          <group position={[-halfW - 0.075, fringeY, 0]}>
+          {/* Left Side White Fringe Strings (-X) */}
+          <group position={[-halfW - 0.08, fringeY, 0]}>
             {fringeData.map((f) => (
               <mesh
                 key={`fringe-l-${f.id}`}
@@ -753,13 +753,14 @@ function NepaleseCarpet({
                 rotation={[0, f.rot, 0]}
                 receiveShadow
               >
-                <boxGeometry args={[f.length, 0.0035, 0.01]} />
-                <meshStandardMaterial color={f.tint} roughness={0.95} />
+                <boxGeometry args={[f.length, 0.004, 0.012]} />
+                <meshStandardMaterial color={f.tint} roughness={0.9} />
               </mesh>
             ))}
           </group>
-          {/* Right End Fringes */}
-          <group position={[halfW + 0.075, fringeY, 0]}>
+
+          {/* Right Side White Fringe Strings (+X) */}
+          <group position={[halfW + 0.08, fringeY, 0]}>
             {fringeData.map((f) => (
               <mesh
                 key={`fringe-r-${f.id}`}
@@ -767,41 +768,8 @@ function NepaleseCarpet({
                 rotation={[0, -f.rot, 0]}
                 receiveShadow
               >
-                <boxGeometry args={[f.length, 0.0035, 0.01]} />
-                <meshStandardMaterial color={f.tint} roughness={0.95} />
-              </mesh>
-            ))}
-          </group>
-        </>
-      )}
-
-      {hasFringes && fringeSide === 'z' && (
-        <>
-          {/* Front End Fringes */}
-          <group position={[0, fringeY, halfD + 0.075]}>
-            {fringeData.map((f) => (
-              <mesh
-                key={`fringe-f-${f.id}`}
-                position={[f.pos, 0, 0]}
-                rotation={[f.rot, 0, 0]}
-                receiveShadow
-              >
-                <boxGeometry args={[0.01, 0.0035, f.length]} />
-                <meshStandardMaterial color={f.tint} roughness={0.95} />
-              </mesh>
-            ))}
-          </group>
-          {/* Back End Fringes */}
-          <group position={[0, fringeY, -halfD - 0.075]}>
-            {fringeData.map((f) => (
-              <mesh
-                key={`fringe-b-${f.id}`}
-                position={[f.pos, 0, 0]}
-                rotation={[-f.rot, 0, 0]}
-                receiveShadow
-              >
-                <boxGeometry args={[0.01, 0.0035, f.length]} />
-                <meshStandardMaterial color={f.tint} roughness={0.95} />
+                <boxGeometry args={[f.length, 0.004, 0.012]} />
+                <meshStandardMaterial color={f.tint} roughness={0.9} />
               </mesh>
             ))}
           </group>
