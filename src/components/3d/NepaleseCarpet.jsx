@@ -683,28 +683,43 @@ function NepaleseCarpet({
   // 2. Generate micro-knot wool bump texture
   const knotBumpMap = useMemo(() => createWoolKnotBumpTexture(), []);
 
-  // 3. Compute fringe placements along the left and right short/long edges
+  // 3. Compute ultra-dense 2-layered white wool fringe placements (Left & Right sides)
   const fringeData = useMemo(() => {
     if (!hasFringes) return [];
-    const count = 64; // High-density white fringe tassels
+    const threadsPerLayer = 120; // 120 threads per layer = 240 threads per side!
     const items = [];
-    const span = depth; // Always span along depth (Z axis) for Left and Right sides
-    const start = -span / 2 + 0.03;
-    const step = (span - 0.06) / (count - 1);
+    const span = depth;
+    const start = -span / 2 + 0.02;
+    const step = (span - 0.04) / (threadsPerLayer - 1);
 
-    for (let i = 0; i < count; i++) {
-      const pos = start + i * step;
-      const rot = (Math.random() - 0.5) * 0.18;
-      const length = 0.16 + (Math.random() - 0.5) * 0.02;
-      const tint = Math.random() > 0.25 ? '#ffffff' : '#faf6eb';
-      items.push({ pos, rot, length, tint, id: i });
+    // Layer 1 (Upper main layer)
+    for (let i = 0; i < threadsPerLayer; i++) {
+      const pos = start + i * step + (Math.random() - 0.5) * 0.006;
+      const rot = (Math.random() - 0.5) * 0.22; // Natural organic splay
+      const length = 0.18 + (Math.random() - 0.5) * 0.035;
+      const zShift = (Math.random() - 0.5) * 0.003;
+      const tints = ['#ffffff', '#ffffff', '#fffdf5', '#f7f4ea', '#f2ece0'];
+      const tint = tints[Math.floor(Math.random() * tints.length)];
+      items.push({ pos, rot, length, zShift, tint, layer: 1, id: `l1-${i}` });
     }
+
+    // Layer 2 (Lower offset layer filling gaps for plush density)
+    for (let i = 0; i < threadsPerLayer - 1; i++) {
+      const pos = start + (i + 0.5) * step + (Math.random() - 0.5) * 0.006;
+      const rot = (Math.random() - 0.5) * 0.28;
+      const length = 0.16 + (Math.random() - 0.5) * 0.03;
+      const zShift = (Math.random() - 0.5) * 0.003;
+      const tints = ['#ffffff', '#fffdf5', '#f7f4ea'];
+      const tint = tints[Math.floor(Math.random() * tints.length)];
+      items.push({ pos, rot, length, zShift, tint, layer: 2, id: `l2-${i}` });
+    }
+
     return items;
   }, [hasFringes, depth]);
 
   const halfW = width / 2;
   const halfD = depth / 2;
-  const fringeY = pileThickness * 0.35;
+  const fringeY = pileThickness * 0.3;
 
   return (
     <group position={position} rotation={rotation}>
@@ -741,35 +756,47 @@ function NepaleseCarpet({
         </mesh>
       ))}
 
-      {/* 3. TRADITIONAL HAND-TIED END FRINGES (White wool tassels on LEFT and RIGHT sides) */}
+      {/* 3. TRADITIONAL HAND-TIED ULTRA-DENSE WHITE WOOL END FRINGES (Left & Right Sides) */}
       {hasFringes && (
         <>
-          {/* Left Side White Fringe Strings (-X) */}
-          <group position={[-halfW - 0.08, fringeY, 0]}>
+          {/* Braided Knot Header Band on Left (-X) */}
+          <mesh position={[-halfW - 0.012, fringeY + 0.002, 0]}>
+            <boxGeometry args={[0.024, 0.006, depth + 0.03]} />
+            <meshStandardMaterial color="#ffffff" roughness={0.85} />
+          </mesh>
+
+          {/* Braided Knot Header Band on Right (+X) */}
+          <mesh position={[halfW + 0.012, fringeY + 0.002, 0]}>
+            <boxGeometry args={[0.024, 0.006, depth + 0.03]} />
+            <meshStandardMaterial color="#ffffff" roughness={0.85} />
+          </mesh>
+
+          {/* Left Side Dense White Wool Threads (-X) */}
+          <group position={[-halfW - 0.09, fringeY, 0]}>
             {fringeData.map((f) => (
               <mesh
                 key={`fringe-l-${f.id}`}
-                position={[0, 0, f.pos]}
+                position={[0, f.layer === 2 ? -0.0015 : 0, f.pos + f.zShift]}
                 rotation={[0, f.rot, 0]}
                 receiveShadow
               >
-                <boxGeometry args={[f.length, 0.004, 0.012]} />
-                <meshStandardMaterial color={f.tint} roughness={0.9} />
+                <boxGeometry args={[f.length, 0.003, 0.007]} />
+                <meshStandardMaterial color={f.tint} roughness={0.85} />
               </mesh>
             ))}
           </group>
 
-          {/* Right Side White Fringe Strings (+X) */}
-          <group position={[halfW + 0.08, fringeY, 0]}>
+          {/* Right Side Dense White Wool Threads (+X) */}
+          <group position={[halfW + 0.09, fringeY, 0]}>
             {fringeData.map((f) => (
               <mesh
                 key={`fringe-r-${f.id}`}
-                position={[0, 0, f.pos]}
+                position={[0, f.layer === 2 ? -0.0015 : 0, f.pos + f.zShift]}
                 rotation={[0, -f.rot, 0]}
                 receiveShadow
               >
-                <boxGeometry args={[f.length, 0.004, 0.012]} />
-                <meshStandardMaterial color={f.tint} roughness={0.9} />
+                <boxGeometry args={[f.length, 0.003, 0.007]} />
+                <meshStandardMaterial color={f.tint} roughness={0.85} />
               </mesh>
             ))}
           </group>
