@@ -426,32 +426,32 @@ function GalleryRoom({ theme, wallColor = '#ffffff', hallLayout = 'classic' }) {
         />
       </mesh>
 
-      {/* Traditional Nepalese Hand-Knotted Wool Carpets (Galaincha) */}
+      {/* Traditional Nepalese Hand-Knotted Wool Carpets (Galaincha) - Pure Procedural Render */}
       <NepaleseCarpet
         position={[0, 0.001, -4.0]}
         size={[4.2, 2.8]}
-        texturePath="/textures/nepalese_carpet.jpg"
+        variant="mandala"
         hasFringes={true}
         fringeSide="x"
       />
       <NepaleseCarpet
         position={[0, 0.001, 5.5]}
         size={[3.8, 1.6]}
-        texturePath="/textures/nepalese_runner.jpg"
+        variant="runner"
         hasFringes={true}
         fringeSide="z"
       />
       <NepaleseCarpet
         position={[-5.2, 0.001, -1.0]}
         size={[3.2, 2.2]}
-        texturePath="/textures/nepalese_carpet.jpg"
+        variant="mandala"
         hasFringes={true}
         fringeSide="x"
       />
       <NepaleseCarpet
         position={[5.2, 0.001, -1.0]}
         size={[3.2, 2.2]}
-        texturePath="/textures/nepalese_carpet.jpg"
+        variant="mandala"
         hasFringes={true}
         fringeSide="x"
       />
