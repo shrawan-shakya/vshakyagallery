@@ -435,11 +435,11 @@ function GalleryRoom({ theme, wallColor = '#ffffff', hallLayout = 'classic' }) {
         hasFringes={true}
         fringeSide="x"
       />
-      {/* 2. Monastery Ashtamangala Runner Carpet at front entrance */}
+      {/* 2. Grand Royal Welcome Galaicha Carpet at front entrance */}
       <NepaleseCarpet
         position={[0, 0.001, 5.5]}
-        size={[3.8, 1.6]}
-        variant="runner"
+        size={[4.4, 2.4]}
+        variant="entrance_welcome"
         hasFringes={true}
         fringeSide="z"
       />

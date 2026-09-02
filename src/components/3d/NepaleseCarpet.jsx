@@ -392,12 +392,15 @@ function createProceduralNepaleseCarpetTexture(variant = 'mandala') {
 
   const isRunner = variant === 'runner';
   const isDragon = variant === 'royal_dragon';
+  const isEntrance = variant === 'entrance_welcome';
 
   // 1. BASE BACKGROUND FIELD
   const baseColor = isRunner
     ? PALETTE.navyDeep
     : isDragon
     ? PALETTE.saffronGold
+    : isEntrance
+    ? PALETTE.crimsonDark
     : PALETTE.crimsonRich;
   ctx.fillStyle = baseColor;
   ctx.fillRect(0, 0, w, h);
@@ -503,7 +506,40 @@ function createProceduralNepaleseCarpetTexture(variant = 'mandala') {
   const cx = w / 2;
   const cy = h / 2;
 
-  if (isRunner) {
+  if (isEntrance) {
+    // ENTRANCE WELCOME VARIANT: Grand Royal Lotus Mandala + Twin Flanking Ashtamangala Medallions
+    drawGrandMandalaMedallion(ctx, cx, cy, 210);
+
+    // Left & Right Welcome Medallions (Treasure Vase & Golden Fishes)
+    const leftX = cx - 260;
+    const rightX = cx + 260;
+    const sideSyms = ['vase', 'fish'];
+
+    [leftX, rightX].forEach((xPos, idx) => {
+      ctx.beginPath();
+      ctx.arc(xPos, cy, 70, 0, Math.PI * 2);
+      ctx.fillStyle = PALETTE.navyDeep;
+      ctx.fill();
+      ctx.strokeStyle = PALETTE.goldMetallic;
+      ctx.lineWidth = 5;
+      ctx.stroke();
+
+      drawAshtamangalaIcon(ctx, sideSyms[idx], xPos, cy, 110);
+      drawHimalayanCloud(ctx, xPos, cy - 110, 35, PALETTE.turquoise);
+      drawHimalayanCloud(ctx, xPos, cy + 110, 35, PALETTE.turquoise);
+    });
+
+    // Top & Bottom Endless Knots
+    [cy - 250, cy + 250].forEach((yPos) => {
+      drawEndlessKnot(ctx, cx, yPos, 90, PALETTE.goldBright, 4);
+    });
+
+    // 4 Corner Spandrels
+    drawCornerSpandrel(ctx, innerB + 10, innerB + 10, 160, 0);
+    drawCornerSpandrel(ctx, w - innerB - 10, innerB + 10, 160, Math.PI / 2);
+    drawCornerSpandrel(ctx, w - innerB - 10, h - innerB - 10, 160, Math.PI);
+    drawCornerSpandrel(ctx, innerB + 10, h - innerB - 10, 160, -Math.PI / 2);
+  } else if (isRunner) {
     // RUNNER VARIANT: All Eight Auspicious Symbols (Ashtamangala) lined along center axis
     const symbols = ['knot', 'fish', 'conch', 'vase', 'lotus', 'wheel'];
     const ys = [h * 0.18, h * 0.31, h * 0.44, h * 0.57, h * 0.7, h * 0.83];
