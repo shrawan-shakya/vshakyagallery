@@ -435,15 +435,15 @@ function GalleryRoom({ theme, wallColor = '#ffffff', hallLayout = 'classic' }) {
         hasFringes={true}
         fringeSide="x"
       />
-      {/* 2. Grand Royal Welcome Galaicha Carpet at front entrance */}
+      {/* 2. Replicated Mandala Carpet at front entrance */}
       <NepaleseCarpet
         position={[0, 0.001, 5.5]}
         size={[4.4, 2.4]}
-        variant="entrance_welcome"
+        variant="mandala"
         hasFringes={true}
         fringeSide="z"
       />
-      {/* 3. Himalayan Royal Dragon & Cloud Saffron Rug in left wing */}
+      {/* 3. Himalayan Saffron Gold Dragon & Cloud Rug in left wing */}
       <NepaleseCarpet
         position={[-5.2, 0.001, -1.0]}
         size={[3.2, 2.2]}
@@ -451,11 +451,11 @@ function GalleryRoom({ theme, wallColor = '#ffffff', hallLayout = 'classic' }) {
         hasFringes={true}
         fringeSide="x"
       />
-      {/* 4. Imperial Lotus Mandala Accent Rug in right wing */}
+      {/* 4. Himalayan Saffron Gold Dragon & Cloud Rug in right wing (matching left) */}
       <NepaleseCarpet
         position={[5.2, 0.001, -1.0]}
         size={[3.2, 2.2]}
-        variant="mandala"
+        variant="royal_dragon"
         hasFringes={true}
         fringeSide="x"
       />
