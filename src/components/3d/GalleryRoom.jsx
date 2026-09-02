@@ -3,6 +3,7 @@ import * as THREE from 'three';
 import { RectAreaLightUniformsLib } from 'three/examples/jsm/lights/RectAreaLightUniformsLib.js';
 import EntranceWall from './EntranceWall';
 import CeilingDetail from './CeilingDetail';
+import NepaleseCarpet from './NepaleseCarpet';
 import { ROOM_H } from '../../constants';
 import { buildMiteredLoopGeometry } from '../../utils/moulding';
 import { getHallLayout } from '../../utils/hallLayouts';
@@ -424,6 +425,36 @@ function GalleryRoom({ theme, wallColor = '#ffffff', hallLayout = 'classic' }) {
           envMapIntensity={isDark ? 0.9 : 0.55}
         />
       </mesh>
+
+      {/* Traditional Nepalese Hand-Knotted Wool Carpets (Galaincha) */}
+      <NepaleseCarpet
+        position={[0, 0.001, -4.0]}
+        size={[4.2, 2.8]}
+        texturePath="/textures/nepalese_carpet.jpg"
+        hasFringes={true}
+        fringeSide="x"
+      />
+      <NepaleseCarpet
+        position={[0, 0.001, 5.5]}
+        size={[3.8, 1.6]}
+        texturePath="/textures/nepalese_runner.jpg"
+        hasFringes={true}
+        fringeSide="z"
+      />
+      <NepaleseCarpet
+        position={[-5.2, 0.001, -1.0]}
+        size={[3.2, 2.2]}
+        texturePath="/textures/nepalese_carpet.jpg"
+        hasFringes={true}
+        fringeSide="x"
+      />
+      <NepaleseCarpet
+        position={[5.2, 0.001, -1.0]}
+        size={[3.2, 2.2]}
+        texturePath="/textures/nepalese_carpet.jpg"
+        hasFringes={true}
+        fringeSide="x"
+      />
 
       {/* 2. CEILING */}
       <mesh rotation={[Math.PI / 2, 0, 0]} position={[0, ROOM_H, 0]}>
