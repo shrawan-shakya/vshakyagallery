@@ -441,7 +441,7 @@ function GalleryRoom({ theme, wallColor = '#ffffff', hallLayout = 'classic' }) {
         size={[4.4, 2.4]}
         variant="mandala"
         hasFringes={true}
-        fringeSide="z"
+        fringeSide="x"
       />
       {/* 3. Himalayan Saffron Gold Dragon & Cloud Rug in left wing */}
       <NepaleseCarpet
