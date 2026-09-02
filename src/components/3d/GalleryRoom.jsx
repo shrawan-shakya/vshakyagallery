@@ -427,6 +427,7 @@ function GalleryRoom({ theme, wallColor = '#ffffff', hallLayout = 'classic' }) {
       </mesh>
 
       {/* Traditional Nepalese Hand-Knotted Wool Carpets (Galaincha) - Pure Procedural Render */}
+      {/* 1. Grand Durbar Vishvavajra Mandala Carpet under central bench */}
       <NepaleseCarpet
         position={[0, 0.001, -4.0]}
         size={[4.2, 2.8]}
@@ -434,6 +435,7 @@ function GalleryRoom({ theme, wallColor = '#ffffff', hallLayout = 'classic' }) {
         hasFringes={true}
         fringeSide="x"
       />
+      {/* 2. Monastery Ashtamangala Runner Carpet at front entrance */}
       <NepaleseCarpet
         position={[0, 0.001, 5.5]}
         size={[3.8, 1.6]}
@@ -441,13 +443,15 @@ function GalleryRoom({ theme, wallColor = '#ffffff', hallLayout = 'classic' }) {
         hasFringes={true}
         fringeSide="z"
       />
+      {/* 3. Himalayan Royal Dragon & Cloud Saffron Rug in left wing */}
       <NepaleseCarpet
         position={[-5.2, 0.001, -1.0]}
         size={[3.2, 2.2]}
-        variant="mandala"
+        variant="royal_dragon"
         hasFringes={true}
         fringeSide="x"
       />
+      {/* 4. Imperial Lotus Mandala Accent Rug in right wing */}
       <NepaleseCarpet
         position={[5.2, 0.001, -1.0]}
         size={[3.2, 2.2]}

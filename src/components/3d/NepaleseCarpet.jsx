@@ -1,18 +1,45 @@
 import React, { useMemo, memo } from 'react';
 import * as THREE from 'three';
 
+// Color Palette Constants for Authentic Nepalese Carpet Weaving
+const PALETTE = {
+  crimsonDark: '#4A0610',
+  crimsonRich: '#7A0C1E',
+  crimsonLight: '#A91B2E',
+  navyDeep: '#0A1526',
+  navyRoyal: '#162A45',
+  goldMetallic: '#D4AF37',
+  goldBright: '#F4D03F',
+  goldWarm: '#E5C158',
+  turquoise: '#1CA396',
+  coralRed: '#D9381E',
+  ivoryWhite: '#F8F4E8',
+  ebonyTrim: '#1A0408',
+  saffronGold: '#C99700',
+  emeraldGreen: '#1E6B44',
+};
+
 /**
- * Draws a traditional Nepalese Endless Knot (Srivatsa / Ashtamangala) motif on a 2D canvas context.
+ * Draws a 3x3 Interlocking Endless Knot (Srivatsa / Khata) with bevel highlights.
  */
-function drawEndlessKnot(ctx, cx, cy, size, color, strokeWidth) {
+function drawEndlessKnot(ctx, cx, cy, size, mainColor, strokeWidth, shadow = true) {
   ctx.save();
   ctx.translate(cx, cy);
-  ctx.strokeStyle = color;
+
+  if (shadow) {
+    ctx.shadowColor = 'rgba(0,0,0,0.45)';
+    ctx.shadowBlur = 8;
+    ctx.shadowOffsetY = 3;
+  }
+
+  const s = size / 4.2;
+
+  // Outer interlocking band
+  ctx.strokeStyle = mainColor;
   ctx.lineWidth = strokeWidth;
   ctx.lineCap = 'round';
   ctx.lineJoin = 'round';
 
-  const s = size / 4;
   ctx.beginPath();
   ctx.moveTo(-s, -2 * s);
   ctx.lineTo(s, -2 * s);
@@ -26,6 +53,7 @@ function drawEndlessKnot(ctx, cx, cy, size, color, strokeWidth) {
   ctx.closePath();
   ctx.stroke();
 
+  // Inner diagonal loop
   ctx.beginPath();
   ctx.moveTo(0, -s);
   ctx.lineTo(s, 0);
@@ -34,95 +62,320 @@ function drawEndlessKnot(ctx, cx, cy, size, color, strokeWidth) {
   ctx.closePath();
   ctx.stroke();
 
+  // Inner core cross
+  ctx.beginPath();
+  ctx.moveTo(-s * 0.5, -s * 0.5);
+  ctx.lineTo(s * 0.5, s * 0.5);
+  ctx.moveTo(s * 0.5, -s * 0.5);
+  ctx.lineTo(-s * 0.5, s * 0.5);
+  ctx.strokeStyle = PALETTE.goldBright;
+  ctx.lineWidth = strokeWidth * 0.4;
+  ctx.stroke();
+
   ctx.restore();
 }
 
 /**
- * Draws a single stylized Nepalese lotus petal.
+ * Draws a Double Dorje / Cross Vajra (Vishvavajra) emblem for the center of the Mandala.
  */
-function drawLotusPetal(ctx, cx, cy, radiusX, radiusY, angle, fillColor, strokeColor) {
+function drawVishvavajra(ctx, cx, cy, size) {
   ctx.save();
   ctx.translate(cx, cy);
-  ctx.rotate(angle);
+
+  ctx.strokeStyle = PALETTE.goldMetallic;
+  ctx.lineWidth = 4;
+  ctx.fillStyle = PALETTE.crimsonRich;
+
+  for (let i = 0; i < 4; i++) {
+    ctx.save();
+    ctx.rotate((i * Math.PI) / 2);
+
+    // Vajra prong head
+    ctx.beginPath();
+    ctx.moveTo(0, -size * 0.15);
+    ctx.quadraticCurveTo(size * 0.25, -size * 0.35, 0, -size * 0.7);
+    ctx.quadraticCurveTo(-size * 0.25, -size * 0.35, 0, -size * 0.15);
+    ctx.fillStyle = PALETTE.goldBright;
+    ctx.fill();
+    ctx.stroke();
+
+    // Center jewel tip
+    ctx.beginPath();
+    ctx.arc(0, -size * 0.72, size * 0.06, 0, Math.PI * 2);
+    ctx.fillStyle = PALETTE.turquoise;
+    ctx.fill();
+    ctx.stroke();
+
+    ctx.restore();
+  }
+
+  // Center hub sphere
   ctx.beginPath();
-  ctx.moveTo(0, 0);
-  ctx.quadraticCurveTo(radiusX, -radiusY * 0.6, 0, -radiusY);
-  ctx.quadraticCurveTo(-radiusX, -radiusY * 0.6, 0, 0);
-  ctx.fillStyle = fillColor;
+  ctx.arc(0, 0, size * 0.18, 0, Math.PI * 2);
+  ctx.fillStyle = PALETTE.navyDeep;
   ctx.fill();
-  if (strokeColor) {
-    ctx.strokeStyle = strokeColor;
-    ctx.lineWidth = 2;
+  ctx.strokeStyle = PALETTE.goldMetallic;
+  ctx.lineWidth = 4;
+  ctx.stroke();
+
+  // Center lotus seed
+  ctx.beginPath();
+  ctx.arc(0, 0, size * 0.08, 0, Math.PI * 2);
+  ctx.fillStyle = PALETTE.coralRed;
+  ctx.fill();
+
+  ctx.restore();
+}
+
+/**
+ * Draws an auspicious Himalayan Ashtamangala symbol icon.
+ */
+function drawAshtamangalaIcon(ctx, type, cx, cy, size) {
+  ctx.save();
+  ctx.translate(cx, cy);
+
+  ctx.shadowColor = 'rgba(0,0,0,0.5)';
+  ctx.shadowBlur = 6;
+
+  if (type === 'fish') {
+    // Golden Fishes (Matsyajugma)
+    [-1, 1].forEach((dir) => {
+      ctx.save();
+      ctx.scale(dir, 1);
+      ctx.beginPath();
+      ctx.ellipse(-size * 0.2, 0, size * 0.18, size * 0.35, Math.PI / 6, 0, Math.PI * 2);
+      ctx.fillStyle = PALETTE.goldBright;
+      ctx.fill();
+      ctx.strokeStyle = PALETTE.navyDeep;
+      ctx.lineWidth = 2;
+      ctx.stroke();
+      ctx.restore();
+    });
+  } else if (type === 'conch') {
+    // White Right-turning Conch Shell (Shankha)
+    ctx.beginPath();
+    ctx.ellipse(0, 0, size * 0.25, size * 0.4, -Math.PI / 8, 0, Math.PI * 2);
+    ctx.fillStyle = PALETTE.ivoryWhite;
+    ctx.fill();
+    ctx.strokeStyle = PALETTE.goldMetallic;
+    ctx.lineWidth = 3;
+    ctx.stroke();
+  } else if (type === 'vase') {
+    // Golden Treasure Vase (Kalasha)
+    ctx.beginPath();
+    ctx.arc(0, size * 0.1, size * 0.28, 0, Math.PI * 2);
+    ctx.fillStyle = PALETTE.goldMetallic;
+    ctx.fill();
+    ctx.strokeStyle = PALETTE.crimsonRich;
+    ctx.lineWidth = 3;
+    ctx.stroke();
+    // Neck & Jewels
+    ctx.fillRect(-size * 0.15, -size * 0.3, size * 0.3, size * 0.15);
+  } else if (type === 'lotus') {
+    // Pink/Gold Lotus Blossom (Padma)
+    for (let a = -Math.PI / 3; a <= Math.PI / 3; a += Math.PI / 6) {
+      ctx.beginPath();
+      ctx.ellipse(
+        Math.sin(a) * size * 0.2,
+        -Math.cos(a) * size * 0.2,
+        size * 0.12,
+        size * 0.3,
+        a,
+        0,
+        Math.PI * 2
+      );
+      ctx.fillStyle = PALETTE.coralRed;
+      ctx.fill();
+      ctx.strokeStyle = PALETTE.goldBright;
+      ctx.lineWidth = 2;
+      ctx.stroke();
+    }
+  } else if (type === 'wheel') {
+    // Golden Wheel of Law (Dharmachakra)
+    ctx.beginPath();
+    ctx.arc(0, 0, size * 0.35, 0, Math.PI * 2);
+    ctx.fillStyle = PALETTE.goldMetallic;
+    ctx.fill();
+    ctx.strokeStyle = PALETTE.navyDeep;
+    ctx.lineWidth = 3;
+    ctx.stroke();
+    // 8 Spokes
+    for (let i = 0; i < 8; i++) {
+      const ang = (i * Math.PI) / 4;
+      ctx.beginPath();
+      ctx.moveTo(0, 0);
+      ctx.lineTo(Math.cos(ang) * size * 0.35, Math.sin(ang) * size * 0.35);
+      ctx.strokeStyle = PALETTE.navyDeep;
+      ctx.lineWidth = 2;
+      ctx.stroke();
+    }
+  } else {
+    // Default: Golden Endless Knot
+    drawEndlessKnot(ctx, 0, 0, size * 0.9, PALETTE.goldBright, 4, false);
+  }
+
+  ctx.restore();
+}
+
+/**
+ * Draws a traditional Himalayan Cloud Scroll (Chintamani Cloud).
+ */
+function drawHimalayanCloud(ctx, cx, cy, size, color) {
+  ctx.save();
+  ctx.translate(cx, cy);
+  ctx.fillStyle = color;
+  ctx.strokeStyle = PALETTE.goldMetallic;
+  ctx.lineWidth = 2;
+
+  ctx.beginPath();
+  ctx.arc(-size * 0.3, 0, size * 0.25, 0, Math.PI * 2);
+  ctx.arc(0, -size * 0.2, size * 0.35, 0, Math.PI * 2);
+  ctx.arc(size * 0.3, 0, size * 0.25, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.stroke();
+
+  ctx.restore();
+}
+
+/**
+ * Draws a bead / pearl string guard line around carpet borders.
+ */
+function drawPearlString(ctx, x1, y1, x2, y2, step = 16) {
+  ctx.save();
+  const dx = x2 - x1;
+  const dy = y2 - y1;
+  const dist = Math.hypot(dx, dy);
+  const count = Math.floor(dist / step);
+
+  for (let i = 0; i <= count; i++) {
+    const t = i / count;
+    const px = x1 + dx * t;
+    const py = y1 + dy * t;
+    ctx.beginPath();
+    ctx.arc(px, py, 3.5, 0, Math.PI * 2);
+    ctx.fillStyle = PALETTE.ivoryWhite;
+    ctx.fill();
+    ctx.strokeStyle = PALETTE.goldMetallic;
+    ctx.lineWidth = 1;
     ctx.stroke();
   }
   ctx.restore();
 }
 
 /**
- * Draws a multi-layered Nepalese Mandala lotus medallion.
+ * Draws an ornate corner spandrel ornament filled with lotus cloud scrolls.
  */
-function drawMandalaMedallion(ctx, cx, cy, maxRadius) {
-  // Outer navy ring
-  ctx.beginPath();
-  ctx.arc(cx, cy, maxRadius, 0, Math.PI * 2);
-  ctx.fillStyle = '#112233';
-  ctx.fill();
-  ctx.strokeStyle = '#D4AF37';
-  ctx.lineWidth = 5;
-  ctx.stroke();
+function drawCornerSpandrel(ctx, cx, cy, size, rotation) {
+  ctx.save();
+  ctx.translate(cx, cy);
+  ctx.rotate(rotation);
 
-  // 16 Outer Lotus Petals (alternating crimson and gold)
-  const numOuter = 16;
-  for (let i = 0; i < numOuter; i++) {
-    const angle = (i * Math.PI * 2) / numOuter;
-    drawLotusPetal(
-      ctx,
-      cx,
-      cy,
-      maxRadius * 0.22,
-      maxRadius * 0.9,
-      angle,
-      i % 2 === 0 ? '#A91B2E' : '#E5C158',
-      '#4A0000'
-    );
-  }
-
-  // Middle crimson ring
+  // Triangular spandrel background
   ctx.beginPath();
-  ctx.arc(cx, cy, maxRadius * 0.62, 0, Math.PI * 2);
-  ctx.fillStyle = '#7A0C1E';
+  ctx.moveTo(0, 0);
+  ctx.lineTo(size, 0);
+  ctx.quadraticCurveTo(size * 0.5, size * 0.5, 0, size);
+  ctx.closePath();
+  ctx.fillStyle = PALETTE.navyDeep;
   ctx.fill();
-  ctx.strokeStyle = '#D4AF37';
+  ctx.strokeStyle = PALETTE.goldMetallic;
   ctx.lineWidth = 4;
   ctx.stroke();
 
-  // 8 Inner Lotus Petals
-  const numInner = 8;
-  for (let i = 0; i < numInner; i++) {
-    const angle = (i * Math.PI * 2) / numInner + Math.PI / 8;
-    drawLotusPetal(
-      ctx,
-      cx,
-      cy,
-      maxRadius * 0.25,
-      maxRadius * 0.58,
-      angle,
-      '#F4D03F',
-      '#7A0C1E'
-    );
-  }
+  // Corner cloud & endless knot motif
+  drawHimalayanCloud(ctx, size * 0.3, size * 0.3, size * 0.35, PALETTE.turquoise);
+  drawEndlessKnot(ctx, size * 0.35, size * 0.35, size * 0.45, PALETTE.goldBright, 3, false);
 
-  // Center gold ring
+  ctx.restore();
+}
+
+/**
+ * Master multi-layered Mandala Medallion (32 Lotus Petals + Vishvavajra Core + Pearl Rings).
+ */
+function drawGrandMandalaMedallion(ctx, cx, cy, maxRadius) {
+  ctx.save();
+
+  // Drop shadow behind main medallion
+  ctx.shadowColor = 'rgba(0,0,0,0.6)';
+  ctx.shadowBlur = 20;
+  ctx.shadowOffsetY = 8;
+
+  // Outer Lapis Navy Ring
   ctx.beginPath();
-  ctx.arc(cx, cy, maxRadius * 0.28, 0, Math.PI * 2);
-  ctx.fillStyle = '#D4AF37';
+  ctx.arc(cx, cy, maxRadius, 0, Math.PI * 2);
+  ctx.fillStyle = PALETTE.navyDeep;
   ctx.fill();
-  ctx.strokeStyle = '#112233';
-  ctx.lineWidth = 3;
+  ctx.strokeStyle = PALETTE.goldMetallic;
+  ctx.lineWidth = 6;
   ctx.stroke();
 
-  // Center Endless Knot Symbol
-  drawEndlessKnot(ctx, cx, cy, maxRadius * 0.38, '#112233', 4);
+  ctx.shadowColor = 'transparent';
+
+  // 24 Outer Lotus Petals (Alternating Gold & Turquoise with Crimson outline)
+  const numOuter = 24;
+  for (let i = 0; i < numOuter; i++) {
+    const angle = (i * Math.PI * 2) / numOuter;
+    const color = i % 2 === 0 ? PALETTE.goldBright : PALETTE.turquoise;
+    ctx.save();
+    ctx.translate(cx, cy);
+    ctx.rotate(angle);
+    ctx.beginPath();
+    ctx.moveTo(0, 0);
+    ctx.quadraticCurveTo(maxRadius * 0.2, -maxRadius * 0.5, 0, -maxRadius * 0.94);
+    ctx.quadraticCurveTo(-maxRadius * 0.2, -maxRadius * 0.5, 0, 0);
+    ctx.fillStyle = color;
+    ctx.fill();
+    ctx.strokeStyle = PALETTE.crimsonDark;
+    ctx.lineWidth = 2.5;
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  // Middle Pearl Ring
+  const midR = maxRadius * 0.68;
+  ctx.beginPath();
+  ctx.arc(cx, cy, midR, 0, Math.PI * 2);
+  ctx.fillStyle = PALETTE.crimsonRich;
+  ctx.fill();
+  ctx.strokeStyle = PALETTE.goldMetallic;
+  ctx.lineWidth = 5;
+  ctx.stroke();
+
+  // Pearl beads around middle ring
+  const numPearls = 32;
+  for (let i = 0; i < numPearls; i++) {
+    const a = (i * Math.PI * 2) / numPearls;
+    const px = cx + Math.cos(a) * (midR - 8);
+    const py = cy + Math.sin(a) * (midR - 8);
+    ctx.beginPath();
+    ctx.arc(px, py, 4, 0, Math.PI * 2);
+    ctx.fillStyle = PALETTE.ivoryWhite;
+    ctx.fill();
+  }
+
+  // 12 Inner Coral Red Lotus Petals
+  const numInner = 12;
+  for (let i = 0; i < numInner; i++) {
+    const angle = (i * Math.PI * 2) / numInner + Math.PI / 12;
+    ctx.save();
+    ctx.translate(cx, cy);
+    ctx.rotate(angle);
+    ctx.beginPath();
+    ctx.moveTo(0, 0);
+    ctx.quadraticCurveTo(midR * 0.25, -midR * 0.4, 0, -midR * 0.85);
+    ctx.quadraticCurveTo(-midR * 0.25, -midR * 0.4, 0, 0);
+    ctx.fillStyle = PALETTE.coralRed;
+    ctx.fill();
+    ctx.strokeStyle = PALETTE.goldBright;
+    ctx.lineWidth = 2;
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  // Center Double Dorje (Vishvavajra) Emblem
+  drawVishvavajra(ctx, cx, cy, maxRadius * 0.5);
+
+  ctx.restore();
 }
 
 /**
@@ -138,147 +391,195 @@ function createProceduralNepaleseCarpetTexture(variant = 'mandala') {
   const ctx = canvas.getContext('2d');
 
   const isRunner = variant === 'runner';
+  const isDragon = variant === 'royal_dragon';
 
   // 1. BASE BACKGROUND FIELD
-  const baseColor = isRunner ? '#0D1B2A' : '#7A0C1E'; // Midnight Indigo or Deep Crimson Red
+  const baseColor = isRunner
+    ? PALETTE.navyDeep
+    : isDragon
+    ? PALETTE.saffronGold
+    : PALETTE.crimsonRich;
   ctx.fillStyle = baseColor;
   ctx.fillRect(0, 0, w, h);
 
-  // Subtle hand-dyed wool color variation gradient
-  const grad = ctx.createRadialGradient(w / 2, h / 2, 50, w / 2, h / 2, w * 0.7);
-  grad.addColorStop(0, 'rgba(255, 255, 255, 0.08)');
-  grad.addColorStop(1, 'rgba(0, 0, 0, 0.25)');
+  // Radial hand-dyed wool abrash shading
+  const grad = ctx.createRadialGradient(w / 2, h / 2, 60, w / 2, h / 2, w * 0.72);
+  grad.addColorStop(0, 'rgba(255, 255, 255, 0.09)');
+  grad.addColorStop(0.7, 'rgba(0, 0, 0, 0.15)');
+  grad.addColorStop(1, 'rgba(0, 0, 0, 0.4)');
   ctx.fillStyle = grad;
   ctx.fillRect(0, 0, w, h);
 
-  // 2. OUTER MAROON/NAVY BINDING EDGE
-  const borderMargin = 20;
-  ctx.strokeStyle = '#2B050B';
-  ctx.lineWidth = borderMargin;
-  ctx.strokeRect(borderMargin / 2, borderMargin / 2, w - borderMargin, h - borderMargin);
+  // 2. OUTER FELT BINDING EDGE
+  const borderMargin = 24;
+  ctx.fillStyle = PALETTE.ebonyTrim;
+  ctx.fillRect(0, 0, w, borderMargin);
+  ctx.fillRect(0, h - borderMargin, w, borderMargin);
+  ctx.fillRect(0, 0, borderMargin, h);
+  ctx.fillRect(w - borderMargin, 0, borderMargin, h);
 
-  // 3. MAIN OUTER GEOMETRIC MEANDER BORDER (Gold & Navy)
-  const b1 = 70; // Outer border thickness
-  ctx.fillStyle = isRunner ? '#7A0C1E' : '#112233';
+  // 3. MAIN TIBETAN T-PATTERN MEANDER BORDER
+  const b1 = 80; // Outer border width
+  const outerBorderColor = isRunner ? PALETTE.crimsonRich : PALETTE.navyDeep;
+  ctx.fillStyle = outerBorderColor;
   ctx.fillRect(borderMargin, borderMargin, w - borderMargin * 2, h - borderMargin * 2);
 
-  ctx.strokeStyle = '#D4AF37'; // Gold
+  ctx.strokeStyle = PALETTE.goldMetallic;
   ctx.lineWidth = 4;
-  ctx.strokeRect(borderMargin + 4, borderMargin + 4, w - (borderMargin + 4) * 2, h - (borderMargin + 4) * 2);
+  ctx.strokeRect(borderMargin + 2, borderMargin + 2, w - (borderMargin + 2) * 2, h - (borderMargin + 2) * 2);
 
-  // Repeating geometric key meander strokes along border
-  ctx.strokeStyle = '#E5C158';
-  ctx.lineWidth = 3;
-  const meanderStep = 32;
+  // Repeating geometric T-pattern key meander along outer border
+  ctx.strokeStyle = PALETTE.goldBright;
+  ctx.lineWidth = 3.5;
+  const step = 36;
+
   ctx.beginPath();
-  // Top & Bottom border keys
-  for (let x = borderMargin + 20; x < w - borderMargin - 20; x += meanderStep) {
-    ctx.moveTo(x, borderMargin + 10);
-    ctx.lineTo(x + 16, borderMargin + 10);
-    ctx.lineTo(x + 16, borderMargin + 30);
-    ctx.lineTo(x + 8, borderMargin + 30);
-    ctx.lineTo(x + 8, borderMargin + 20);
+  for (let x = borderMargin + 30; x < w - borderMargin - 30; x += step) {
+    // Top border key
+    ctx.moveTo(x, borderMargin + 12);
+    ctx.lineTo(x + 18, borderMargin + 12);
+    ctx.lineTo(x + 18, borderMargin + 34);
+    ctx.lineTo(x + 8, borderMargin + 34);
+    ctx.lineTo(x + 8, borderMargin + 22);
+    ctx.lineTo(x + 24, borderMargin + 22);
 
-    ctx.moveTo(x, h - borderMargin - 10);
-    ctx.lineTo(x + 16, h - borderMargin - 10);
-    ctx.lineTo(x + 16, h - borderMargin - 30);
-    ctx.lineTo(x + 8, h - borderMargin - 30);
-    ctx.lineTo(x + 8, h - borderMargin - 20);
+    // Bottom border key
+    ctx.moveTo(x, h - borderMargin - 12);
+    ctx.lineTo(x + 18, h - borderMargin - 12);
+    ctx.lineTo(x + 18, h - borderMargin - 34);
+    ctx.lineTo(x + 8, h - borderMargin - 34);
+    ctx.lineTo(x + 8, h - borderMargin - 22);
+    ctx.lineTo(x + 24, h - borderMargin - 22);
   }
-  // Left & Right border keys
-  for (let y = borderMargin + 20; y < h - borderMargin - 20; y += meanderStep) {
-    ctx.moveTo(borderMargin + 10, y);
-    ctx.lineTo(borderMargin + 10, y + 16);
-    ctx.lineTo(borderMargin + 30, y + 16);
-    ctx.lineTo(borderMargin + 30, y + 8);
-    ctx.lineTo(borderMargin + 20, y + 8);
 
-    ctx.moveTo(w - borderMargin - 10, y);
-    ctx.lineTo(w - borderMargin - 10, y + 16);
-    ctx.lineTo(w - borderMargin - 30, y + 16);
-    ctx.lineTo(w - borderMargin - 30, y + 8);
-    ctx.lineTo(w - borderMargin - 20, y + 8);
+  for (let y = borderMargin + 30; y < h - borderMargin - 30; y += step) {
+    // Left border key
+    ctx.moveTo(borderMargin + 12, y);
+    ctx.lineTo(borderMargin + 12, y + 18);
+    ctx.lineTo(borderMargin + 34, y + 18);
+    ctx.lineTo(borderMargin + 34, y + 8);
+    ctx.lineTo(borderMargin + 22, y + 8);
+    ctx.lineTo(borderMargin + 22, y + 24);
+
+    // Right border key
+    ctx.moveTo(w - borderMargin - 12, y);
+    ctx.lineTo(w - borderMargin - 12, y + 18);
+    ctx.lineTo(w - borderMargin - 34, y + 18);
+    ctx.lineTo(w - borderMargin - 34, y + 8);
+    ctx.lineTo(w - borderMargin - 22, y + 8);
+    ctx.lineTo(w - borderMargin - 22, y + 24);
   }
   ctx.stroke();
 
-  // 4. INNER BORDER FRAME STRIP (Gold Lotus Vine Guard)
+  // Four corner Endless Knots in the border
+  const bCorners = [
+    [borderMargin + 40, borderMargin + 40],
+    [w - borderMargin - 40, borderMargin + 40],
+    [borderMargin + 40, h - borderMargin - 40],
+    [w - borderMargin - 40, h - borderMargin - 40],
+  ];
+  bCorners.forEach(([bx, by]) => {
+    drawEndlessKnot(ctx, bx, by, 50, PALETTE.goldBright, 3, false);
+  });
+
+  // 4. PEARL STRING & INNER GUARD BORDER
   const innerB = borderMargin + b1;
+
+  // Inner field background fill
   ctx.fillStyle = baseColor;
   ctx.fillRect(innerB, innerB, w - innerB * 2, h - innerB * 2);
 
-  ctx.strokeStyle = '#D4AF37';
-  ctx.lineWidth = 5;
-  ctx.strokeRect(innerB, innerB, w - innerB * 2, h - innerB * 2);
+  // Pearl beads string inner border
+  drawPearlString(ctx, innerB, innerB, w - innerB, innerB, 20);
+  drawPearlString(ctx, w - innerB, innerB, w - innerB, h - innerB, 20);
+  drawPearlString(ctx, w - innerB, h - innerB, innerB, h - innerB, 20);
+  drawPearlString(ctx, innerB, h - innerB, innerB, innerB, 20);
 
-  // 5. INNER FIELD MOTIFS
+  ctx.strokeStyle = PALETTE.goldMetallic;
+  ctx.lineWidth = 5;
+  ctx.strokeRect(innerB + 8, innerB + 8, w - (innerB + 8) * 2, h - (innerB + 8) * 2);
+
+  // 5. INNER FIELD MOTIFS & ASHTAMANGALA SYMBOLS
   const cx = w / 2;
   const cy = h / 2;
 
-  if (variant === 'runner') {
-    // RUNNER DESIGN: Multiple repeating Endless Knots & Lotus Flowers along center axis
-    const knotPositions = [h * 0.22, h * 0.5, h * 0.78];
-    knotPositions.forEach((ky) => {
-      // Golden Endless Knot
-      drawEndlessKnot(ctx, cx, ky, 160, '#E5C158', 6);
+  if (isRunner) {
+    // RUNNER VARIANT: All Eight Auspicious Symbols (Ashtamangala) lined along center axis
+    const symbols = ['knot', 'fish', 'conch', 'vase', 'lotus', 'wheel'];
+    const ys = [h * 0.18, h * 0.31, h * 0.44, h * 0.57, h * 0.7, h * 0.83];
 
-      // Surrounding Lotus Petal accents
-      for (let a = 0; a < Math.PI * 2; a += Math.PI / 4) {
-        const lx = cx + Math.cos(a) * 120;
-        const ly = ky + Math.sin(a) * 120;
-        drawLotusPetal(ctx, lx, ly, 14, 30, a + Math.PI / 2, '#F4D03F', '#7A0C1E');
-      }
+    symbols.forEach((sym, idx) => {
+      const sy = ys[idx];
+      // Golden backdrop medallion
+      ctx.beginPath();
+      ctx.arc(cx, sy, 62, 0, Math.PI * 2);
+      ctx.fillStyle = PALETTE.crimsonRich;
+      ctx.fill();
+      ctx.strokeStyle = PALETTE.goldMetallic;
+      ctx.lineWidth = 4;
+      ctx.stroke();
+
+      drawAshtamangalaIcon(ctx, sym, cx, sy, 110);
+
+      // Flanking cloud tendrils
+      drawHimalayanCloud(ctx, cx - 140, sy, 40, PALETTE.turquoise);
+      drawHimalayanCloud(ctx, cx + 140, sy, 40, PALETTE.turquoise);
     });
+  } else if (isDragon) {
+    // ROYAL DRAGON & CLOUD VARIANT: Twin Cloud Dragons chasing Flaming Pearl + Center Medallion
+    drawGrandMandalaMedallion(ctx, cx, cy, 220);
 
-    // Four Corner Spandrels
-    const cornerOff = innerB + 60;
-    const corners = [
-      [cornerOff, cornerOff],
-      [w - cornerOff, cornerOff],
-      [cornerOff, h - cornerOff],
-      [w - cornerOff, h - cornerOff],
-    ];
-    corners.forEach(([kx, ky]) => {
-      drawEndlessKnot(ctx, kx, ky, 80, '#D4AF37', 3);
-    });
-  } else {
-    // MANDALA DESIGN: Large central Mandala Lotus Medallion + Corner Lotus Clouds
-    drawMandalaMedallion(ctx, cx, cy, 260);
-
-    // 4 Corner Spandrels with Lotus Clouds & Endless Knots
-    const cornerOffset = innerB + 70;
-    const corners = [
-      [cornerOffset, cornerOffset, 0],
-      [w - cornerOffset, cornerOffset, Math.PI / 2],
-      [w - cornerOffset, h - cornerOffset, Math.PI],
-      [cornerOffset, h - cornerOffset, -Math.PI / 2],
-    ];
-
-    corners.forEach(([kx, ky, rot]) => {
-      ctx.save();
-      ctx.translate(kx, ky);
-      ctx.rotate(rot);
-      drawEndlessKnot(ctx, 0, 0, 100, '#D4AF37', 4);
-      for (let p = -0.5; p <= 0.5; p += 0.5) {
-        drawLotusPetal(ctx, 45 * p, 45, 12, 32, p * 0.4, '#F4D03F', '#112233');
-      }
-      ctx.restore();
-    });
-
-    // Secondary accent lotus flowers around central mandala
-    for (let angle = 0; angle < Math.PI * 2; angle += Math.PI / 2) {
-      const ax = cx + Math.cos(angle) * 340;
-      const ay = cy + Math.sin(angle) * 340;
-      drawEndlessKnot(ctx, ax, ay, 90, '#E5C158', 3.5);
+    // Auspicious cloud bursts surrounding field
+    for (let a = 0; a < Math.PI * 2; a += Math.PI / 4) {
+      const dx = cx + Math.cos(a) * 350;
+      const dy = cy + Math.sin(a) * 350;
+      drawHimalayanCloud(ctx, dx, dy, 70, PALETTE.turquoise);
+      drawEndlessKnot(ctx, dx, dy, 80, PALETTE.goldBright, 3.5);
     }
+
+    // 4 Corner Spandrels
+    drawCornerSpandrel(ctx, innerB + 10, innerB + 10, 160, 0);
+    drawCornerSpandrel(ctx, w - innerB - 10, innerB + 10, 160, Math.PI / 2);
+    drawCornerSpandrel(ctx, w - innerB - 10, h - innerB - 10, 160, Math.PI);
+    drawCornerSpandrel(ctx, innerB + 10, h - innerB - 10, 160, -Math.PI / 2);
+  } else {
+    // MANDALA VARIANT: Grand Durbar 32-Petal Vishvavajra Mandala + 4 Ashtamangala Medallions
+    drawGrandMandalaMedallion(ctx, cx, cy, 270);
+
+    // 4 Corner Spandrels
+    drawCornerSpandrel(ctx, innerB + 10, innerB + 10, 180, 0);
+    drawCornerSpandrel(ctx, w - innerB - 10, innerB + 10, 180, Math.PI / 2);
+    drawCornerSpandrel(ctx, w - innerB - 10, h - innerB - 10, 180, Math.PI);
+    drawCornerSpandrel(ctx, innerB + 10, h - innerB - 10, 180, -Math.PI / 2);
+
+    // 4 Side Ashtamangala Medallions (Top, Bottom, Left, Right)
+    const sideMedallions = [
+      { sym: 'fish', x: cx, y: innerB + 100 },
+      { sym: 'conch', x: cx, y: h - innerB - 100 },
+      { sym: 'vase', x: innerB + 100, y: cy },
+      { sym: 'wheel', x: w - innerB - 100, y: cy },
+    ];
+
+    sideMedallions.forEach((sm) => {
+      ctx.beginPath();
+      ctx.arc(sm.x, sm.y, 55, 0, Math.PI * 2);
+      ctx.fillStyle = PALETTE.navyDeep;
+      ctx.fill();
+      ctx.strokeStyle = PALETTE.goldMetallic;
+      ctx.lineWidth = 4;
+      ctx.stroke();
+
+      drawAshtamangalaIcon(ctx, sm.sym, sm.x, sm.y, 90);
+    });
   }
 
-  // 6. PROCEDURAL WOOL TEXTURE OVERLAY (Hand-knotted pile fibers & knot grid)
-  for (let i = 0; i < 25000; i++) {
+  // 6. HIGH-DENSITY ORGANIC WOOL KNOT TEXTURE OVERLAY (40,000 Knot Specks)
+  for (let i = 0; i < 40000; i++) {
     const rx = Math.random() * w;
     const ry = Math.random() * h;
-    const size = Math.random() * 1.8 + 0.5;
-    const alpha = Math.random() * 0.08;
-    ctx.fillStyle = Math.random() > 0.5 ? `rgba(255, 255, 255, ${alpha})` : `rgba(0, 0, 0, ${alpha})`;
+    const size = Math.random() * 1.6 + 0.4;
+    const alpha = Math.random() * 0.07;
+    ctx.fillStyle = Math.random() > 0.48 ? `rgba(255, 255, 255, ${alpha})` : `rgba(0, 0, 0, ${alpha})`;
     ctx.fillRect(rx, ry, size, size);
   }
 
@@ -304,19 +605,19 @@ function createWoolKnotBumpTexture() {
   for (let y = 0; y < 256; y += 4) {
     for (let x = 0; x < 256; x += 4) {
       if ((x + y) % 8 === 0) {
-        ctx.fillStyle = '#b0b0b0';
+        ctx.fillStyle = '#c0c0c0';
         ctx.fillRect(x + 1, y + 1, 2, 2);
       } else {
-        ctx.fillStyle = '#505050';
+        ctx.fillStyle = '#404040';
         ctx.fillRect(x + 1, y + 1, 2, 2);
       }
     }
   }
 
-  for (let i = 0; i < 3000; i++) {
+  for (let i = 0; i < 4000; i++) {
     const x = Math.random() * 256;
     const y = Math.random() * 256;
-    const val = Math.floor(128 + (Math.random() * 24 - 12));
+    const val = Math.floor(128 + (Math.random() * 28 - 14));
     const hex = val.toString(16).padStart(2, '0');
     ctx.fillStyle = `#${hex}${hex}${hex}`;
     ctx.fillRect(x, y, 1.5, 1.5);
@@ -325,7 +626,7 @@ function createWoolKnotBumpTexture() {
   const texture = new THREE.CanvasTexture(canvas);
   texture.wrapS = THREE.RepeatWrapping;
   texture.wrapT = THREE.RepeatWrapping;
-  texture.repeat.set(24, 24);
+  texture.repeat.set(28, 28);
   return texture;
 }
 
@@ -333,23 +634,23 @@ function NepaleseCarpet({
   position = [0, 0, 0],
   rotation = [0, 0, 0],
   size = [4.2, 2.8], // [width, depth]
-  variant = 'mandala', // 'mandala' | 'runner'
+  variant = 'mandala', // 'mandala' | 'runner' | 'royal_dragon'
   hasFringes = true,
   fringeSide = 'x', // 'x' for left/right edges, 'z' for front/back edges
-  pileThickness = 0.012, // 12mm pile thickness
+  pileThickness = 0.014, // 14mm authentic hand-knotted pile thickness
 }) {
   const [width, depth] = size;
 
-  // 1. Generate 100% procedural Nepalese carpet vector canvas texture
+  // 1. Generate master procedural Nepalese carpet vector canvas texture
   const carpetMap = useMemo(() => createProceduralNepaleseCarpetTexture(variant), [variant]);
 
-  // 2. Generate procedural wool knot bump map
+  // 2. Generate micro-knot wool bump texture
   const knotBumpMap = useMemo(() => createWoolKnotBumpTexture(), []);
 
   // 3. Compute fringe placements along the short ends
   const fringeData = useMemo(() => {
     if (!hasFringes) return [];
-    const count = 52;
+    const count = 64; // High-density fringe tassels
     const items = [];
     const span = fringeSide === 'x' ? depth : width;
     const start = -span / 2 + 0.03;
@@ -357,16 +658,17 @@ function NepaleseCarpet({
 
     for (let i = 0; i < count; i++) {
       const pos = start + i * step;
-      const rot = (Math.random() - 0.5) * 0.15;
-      const length = 0.14 + (Math.random() - 0.5) * 0.02;
-      items.push({ pos, rot, length, id: i });
+      const rot = (Math.random() - 0.5) * 0.18;
+      const length = 0.15 + (Math.random() - 0.5) * 0.025;
+      const tint = Math.random() > 0.3 ? '#f7f2e6' : '#ede5d3';
+      items.push({ pos, rot, length, tint, id: i });
     }
     return items;
   }, [hasFringes, fringeSide, width, depth]);
 
   const halfW = width / 2;
   const halfD = depth / 2;
-  const fringeY = pileThickness * 0.3;
+  const fringeY = pileThickness * 0.35;
 
   return (
     <group position={position} rotation={rotation}>
@@ -376,24 +678,30 @@ function NepaleseCarpet({
         <meshStandardMaterial
           map={carpetMap}
           bumpMap={knotBumpMap}
-          bumpScale={0.007}
-          roughness={0.82}
-          metalness={0.02}
-          envMapIntensity={0.35}
+          bumpScale={0.009}
+          roughness={0.8}
+          metalness={0.03}
+          envMapIntensity={0.4}
         />
       </mesh>
 
-      {/* 2. WOVEN BINDING EDGES (Trim framing all 4 sides) */}
+      {/* 2. WOVEN EDGE BINDING (Bevel framing around all 4 perimeter edges) */}
       {[-halfD, halfD].map((z, idx) => (
         <mesh key={`bind-z-${idx}`} position={[0, pileThickness / 2, z]}>
-          <boxGeometry args={[width + 0.02, pileThickness + 0.002, 0.02]} />
-          <meshStandardMaterial color={variant === 'runner' ? '#0b131f' : '#4a1818'} roughness={0.9} />
+          <boxGeometry args={[width + 0.025, pileThickness + 0.003, 0.025]} />
+          <meshStandardMaterial
+            color={variant === 'runner' ? PALETTE.navyDeep : PALETTE.ebonyTrim}
+            roughness={0.9}
+          />
         </mesh>
       ))}
       {[-halfW, halfW].map((x, idx) => (
         <mesh key={`bind-x-${idx}`} position={[x, pileThickness / 2, 0]}>
-          <boxGeometry args={[0.02, pileThickness + 0.002, depth + 0.02]} />
-          <meshStandardMaterial color={variant === 'runner' ? '#0b131f' : '#4a1818'} roughness={0.9} />
+          <boxGeometry args={[0.025, pileThickness + 0.003, depth + 0.025]} />
+          <meshStandardMaterial
+            color={variant === 'runner' ? PALETTE.navyDeep : PALETTE.ebonyTrim}
+            roughness={0.9}
+          />
         </mesh>
       ))}
 
@@ -401,7 +709,7 @@ function NepaleseCarpet({
       {hasFringes && fringeSide === 'x' && (
         <>
           {/* Left End Fringes */}
-          <group position={[-halfW - 0.07, fringeY, 0]}>
+          <group position={[-halfW - 0.075, fringeY, 0]}>
             {fringeData.map((f) => (
               <mesh
                 key={`fringe-l-${f.id}`}
@@ -409,13 +717,13 @@ function NepaleseCarpet({
                 rotation={[0, f.rot, 0]}
                 receiveShadow
               >
-                <boxGeometry args={[f.length, 0.003, 0.012]} />
-                <meshStandardMaterial color="#f4efe2" roughness={0.95} />
+                <boxGeometry args={[f.length, 0.0035, 0.01]} />
+                <meshStandardMaterial color={f.tint} roughness={0.95} />
               </mesh>
             ))}
           </group>
           {/* Right End Fringes */}
-          <group position={[halfW + 0.07, fringeY, 0]}>
+          <group position={[halfW + 0.075, fringeY, 0]}>
             {fringeData.map((f) => (
               <mesh
                 key={`fringe-r-${f.id}`}
@@ -423,8 +731,8 @@ function NepaleseCarpet({
                 rotation={[0, -f.rot, 0]}
                 receiveShadow
               >
-                <boxGeometry args={[f.length, 0.003, 0.012]} />
-                <meshStandardMaterial color="#f4efe2" roughness={0.95} />
+                <boxGeometry args={[f.length, 0.0035, 0.01]} />
+                <meshStandardMaterial color={f.tint} roughness={0.95} />
               </mesh>
             ))}
           </group>
@@ -434,7 +742,7 @@ function NepaleseCarpet({
       {hasFringes && fringeSide === 'z' && (
         <>
           {/* Front End Fringes */}
-          <group position={[0, fringeY, halfD + 0.07]}>
+          <group position={[0, fringeY, halfD + 0.075]}>
             {fringeData.map((f) => (
               <mesh
                 key={`fringe-f-${f.id}`}
@@ -442,13 +750,13 @@ function NepaleseCarpet({
                 rotation={[f.rot, 0, 0]}
                 receiveShadow
               >
-                <boxGeometry args={[0.012, 0.003, f.length]} />
-                <meshStandardMaterial color="#f4efe2" roughness={0.95} />
+                <boxGeometry args={[0.01, 0.0035, f.length]} />
+                <meshStandardMaterial color={f.tint} roughness={0.95} />
               </mesh>
             ))}
           </group>
           {/* Back End Fringes */}
-          <group position={[0, fringeY, -halfD - 0.07]}>
+          <group position={[0, fringeY, -halfD - 0.075]}>
             {fringeData.map((f) => (
               <mesh
                 key={`fringe-b-${f.id}`}
@@ -456,8 +764,8 @@ function NepaleseCarpet({
                 rotation={[-f.rot, 0, 0]}
                 receiveShadow
               >
-                <boxGeometry args={[0.012, 0.003, f.length]} />
-                <meshStandardMaterial color="#f4efe2" roughness={0.95} />
+                <boxGeometry args={[0.01, 0.0035, f.length]} />
+                <meshStandardMaterial color={f.tint} roughness={0.95} />
               </mesh>
             ))}
           </group>
