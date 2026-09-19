@@ -120,6 +120,75 @@ const BENCH_POSITION = [0, 0, -4.0];
 const BOARD_POSITION = [2.4, 0, 9.15];
 const BOARD_ROTATION = [0, Math.PI + 0.22, 0];
 
+// Specialized Error Boundary around post-processing effects.
+// If shaders or context attributes fail, unmount effects without crashing the 3D gallery.
+class PostProcessingErrorBoundary extends React.Component {
+  constructor(props) {
+    super(props);
+    this.state = { hasError: false };
+  }
+
+  static getDerivedStateFromError() {
+    return { hasError: true };
+  }
+
+  componentDidCatch(error, errorInfo) {
+    console.warn("Post-processing failed; rendering in direct WebGL mode without bloom/vignette:", error, errorInfo);
+    if (this.props.onFallback) {
+      this.props.onFallback();
+    }
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return null;
+    }
+    return this.props.children;
+  }
+}
+
+// Wraps EffectComposer with WebGL attribute and capability verification.
+// Guarantees that strict privacy blockers (e.g. Brave Shields) or missing context attributes
+// do not crash the app with "Cannot read properties of null (reading 'alpha')".
+function SafeEffectComposer({ children, ...props }) {
+  const gl = useThree((s) => s.gl);
+
+  const isPostProcessingSupported = useMemo(() => {
+    try {
+      if (!gl) return false;
+      const ctx = gl.getContext?.();
+      if (!ctx) return false;
+      if (typeof ctx.isContextLost === 'function' && ctx.isContextLost()) return false;
+
+      // Postprocessing library queries getContextAttributes().alpha
+      // Brave Shields or restricted WebGL contexts return null for getContextAttributes()
+      const attrs = ctx.getContextAttributes?.();
+      if (!attrs || typeof attrs.alpha === 'undefined') {
+        console.warn("WebGL context attributes unavailable; running direct rendering mode.");
+        return false;
+      }
+      return true;
+    } catch (e) {
+      console.warn("WebGL post-processing capability check failed:", e);
+      return false;
+    }
+  }, [gl]);
+
+  const [hasError, setHasError] = useState(false);
+
+  if (!isPostProcessingSupported || hasError) {
+    return null;
+  }
+
+  return (
+    <PostProcessingErrorBoundary onFallback={() => setHasError(true)}>
+      <EffectComposer {...props}>
+        {children}
+      </EffectComposer>
+    </PostProcessingErrorBoundary>
+  );
+}
+
 // Robust Error Boundary to catch WebGL or R3F crashes and show a readable feedback page
 class ErrorBoundary extends React.Component {
   constructor(props) {
@@ -147,7 +216,7 @@ class ErrorBoundary extends React.Component {
               WebGL Gallery Crash
             </h2>
             <p className="text-xs text-slate-400 leading-relaxed mb-6">
-              The 3D simulator encountered an issue initializing WebGL or loading assets. Please ensure hardware acceleration is enabled in your browser settings.
+              The 3D simulator encountered an issue initializing WebGL or loading assets. Please ensure hardware acceleration is enabled in your browser settings and privacy shields (e.g. Brave Shields) are not blocking WebGL.
             </p>
             <pre className="text-[10px] bg-slate-950 border border-white/5 p-4 rounded-xl text-red-400 font-mono text-left overflow-auto max-h-40 mb-6 whitespace-pre-wrap">
               {this.state.error?.toString()}
@@ -476,8 +545,8 @@ export default function App() {
               />
             )}
 
-            {/* Cinematic Post-Processing Effects */}
-            <EffectComposer multisampling={1}>
+            {/* Cinematic Post-Processing Effects with Safe Fallback */}
+            <SafeEffectComposer multisampling={1}>
               <Bloom
                 mipmapBlur
                 luminanceThreshold={theme === 'dark' ? 1.0 : 1.2}
@@ -485,7 +554,7 @@ export default function App() {
                 intensity={theme === 'dark' ? 0.2 : 0.1}
               />
               <Vignette offset={0.22} darkness={theme === 'dark' ? 0.35 : 0.22} />
-            </EffectComposer>
+            </SafeEffectComposer>
           </Suspense>
         </Canvas>
       </ErrorBoundary>
