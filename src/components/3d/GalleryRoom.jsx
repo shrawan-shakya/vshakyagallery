@@ -1,12 +1,14 @@
-import React, { useMemo, memo, useEffect } from 'react';
+import React, { useMemo, memo, useEffect, useRef } from 'react';
 import * as THREE from 'three';
 import { RectAreaLightUniformsLib } from 'three/examples/jsm/lights/RectAreaLightUniformsLib.js';
 import EntranceWall from './EntranceWall';
 import CeilingDetail from './CeilingDetail';
 import NepaleseCarpet from './NepaleseCarpet';
+import AimTargets from './AimTargets';
 import { ROOM_H } from '../../constants';
 import { buildMiteredLoopGeometry } from '../../utils/moulding';
 import { getHallLayout } from '../../utils/hallLayouts';
+import { QUALITY_TIERS } from '../../utils/quality';
 
 // Initialize RectAreaLight shader support in Three.js WebGLRenderer
 if (typeof window !== 'undefined') {
@@ -37,9 +39,93 @@ const CROWN_H = 0.248;
 // the wall/crown junction can never show a gap seam
 const CORNICE_GEO = buildMiteredLoopGeometry(CROWN_PROFILE, 20.23, 20.23, { grainTile: 0.5 });
 
-function TubeLight({ position, length, isDark }) {
-  const capOffsets = [-length / 2, length / 2];
+// Track-light fixtures share one geometry + material set across every head
+const TRACK_MAT = new THREE.MeshStandardMaterial({ color: '#1a1a1a', metalness: 0.8, roughness: 0.15 });
+const HEAD_GEO = new THREE.CylinderGeometry(0.042, 0.055, 0.16, 10);
+const LENS_GEO = new THREE.CylinderGeometry(0.038, 0.038, 0.014, 10);
+const LENS_MAT = new THREE.MeshStandardMaterial({
+  color: '#ffffff',
+  emissive: '#eaf4ff',
+  emissiveIntensity: 2.6,
+  roughness: 0.3,
+});
 
+const SKIRT_COLOR = '#07070a';
+const CROWN_COLOR = '#191922';
+
+// ---------------------------------------------------------------------------
+// Procedural surface textures (dark concrete floor, drywall plaster). Built
+// once per page; the random grit lives here, outside of render.
+// ---------------------------------------------------------------------------
+function makeCanvas(size) {
+  const canvas = document.createElement('canvas');
+  canvas.width = size;
+  canvas.height = size;
+  return [canvas, canvas.getContext('2d')];
+}
+
+function makeRepeatTexture(canvas, repeat) {
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.wrapS = THREE.RepeatWrapping;
+  texture.wrapT = THREE.RepeatWrapping;
+  texture.repeat.set(repeat, repeat);
+  return texture;
+}
+
+// Concrete slab grout grid: four lines each way across a 512px tile
+function drawSlabGrid(ctx, strokeStyle) {
+  ctx.strokeStyle = strokeStyle;
+  ctx.lineWidth = 4;
+  for (let offset = 0; offset <= 512; offset += 128) {
+    ctx.beginPath(); ctx.moveTo(offset, 0); ctx.lineTo(offset, 512); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(0, offset); ctx.lineTo(512, offset); ctx.stroke();
+  }
+}
+
+// Random speckle noise; `shade` turns a random [0,1) into a fillStyle
+function sprinkle(ctx, size, count, maxDot, shade) {
+  for (let i = 0; i < count; i++) {
+    const dot = Math.random() * maxDot;
+    ctx.fillStyle = shade(Math.random());
+    ctx.fillRect(Math.random() * size, Math.random() * size, dot, dot);
+  }
+}
+
+function grayHex(value) {
+  const hex = Math.round(value).toString(16).padStart(2, '0');
+  return `#${hex}${hex}${hex}`;
+}
+
+function makeFloorTexture() {
+  const [canvas, ctx] = makeCanvas(512);
+  ctx.fillStyle = '#101014';
+  ctx.fillRect(0, 0, 512, 512);
+  sprinkle(ctx, 512, 6000, 1.5, (r) => `rgba(255, 255, 255, ${r * 0.05})`);
+  drawSlabGrid(ctx, '#222229');
+  return makeRepeatTexture(canvas, 10);
+}
+
+function makeFloorBumpTexture() {
+  const [canvas, ctx] = makeCanvas(512);
+  ctx.fillStyle = '#808080'; // neutral gray = no height
+  ctx.fillRect(0, 0, 512, 512);
+  sprinkle(ctx, 512, 8000, 2, (r) => grayHex(128 + r * 24 - 12));
+  drawSlabGrid(ctx, '#000000'); // black = deeply recessed grout
+  return makeRepeatTexture(canvas, 10);
+}
+
+function makeWallBumpTexture() {
+  const [canvas, ctx] = makeCanvas(128);
+  ctx.fillStyle = '#808080';
+  ctx.fillRect(0, 0, 128, 128);
+  sprinkle(ctx, 128, 4000, 1.5, (r) => grayHex(128 + r * 10 - 5));
+  return makeRepeatTexture(canvas, 15);
+}
+
+// ---------------------------------------------------------------------------
+// Fixtures
+// ---------------------------------------------------------------------------
+function TubeLight({ position, length }) {
   return (
     <group position={position}>
       <mesh>
@@ -49,51 +135,52 @@ function TubeLight({ position, length, isDark }) {
 
       <mesh position={[0, -0.11, 0]} rotation={[0, 0, Math.PI / 2]}>
         <cylinderGeometry args={[0.05, 0.05, length, 16]} />
-        <meshStandardMaterial
-          color="#ffffff"
-          emissive={isDark ? '#dff1ff' : '#fff4e0'}
-          emissiveIntensity={isDark ? 3 : 2.1}
-          roughness={0.25}
-        />
+        <meshStandardMaterial color="#ffffff" emissive="#dff1ff" emissiveIntensity={3} roughness={0.25} />
       </mesh>
 
-      {capOffsets.map((x) => (
+      {[-length / 2, length / 2].map((x) => (
         <mesh key={`cap-${x}`} position={[x, -0.11, 0]} rotation={[0, 0, Math.PI / 2]}>
           <cylinderGeometry args={[0.07, 0.07, 0.14, 12]} />
           <meshStandardMaterial color="#2b2b33" metalness={0.85} roughness={0.3} />
         </mesh>
       ))}
-
-      {/* Linear Rectangular Area Light emitting soft uniform light downward along the length */}
-      <rectAreaLight
-        position={[0, -0.14, 0]}
-        rotation={[-Math.PI / 2, 0, 0]}
-        width={length}
-        height={0.2}
-        intensity={isDark ? 14 : 9}
-        color={isDark ? '#dfeeff' : '#fff2dc'}
-      />
     </group>
+  );
+}
+
+// One linear area light per tube ROW rather than per fixture. Rect area
+// lights are the most expensive light type in the standard shader, and a
+// single strip spanning both tubes gives the same downward wash.
+function TubeRowLight({ z, span }) {
+  return (
+    <rectAreaLight
+      position={[0, ROOM_H - 0.2, z]}
+      rotation={[-Math.PI / 2, 0, 0]}
+      width={span}
+      height={0.2}
+      intensity={12}
+      color="#dfeeff"
+    />
   );
 }
 
 // Internal partition wall (freestanding slab or perimeter-attached baffle).
 // Tall baffles get a crown-style cap; all get a baseboard.
-function HallPartition({ p, color, bump, isDark }) {
+function HallPartition({ p, color, bump }) {
   return (
     <group position={[p.x, p.h / 2, p.z]}>
       <mesh receiveShadow castShadow>
         <boxGeometry args={[p.w, p.h, p.d]} />
-        <meshStandardMaterial color={color} emissive={color} emissiveIntensity={isDark ? 0.18 : 0.1} bumpMap={bump} bumpScale={0.002} roughness={0.95} />
+        <meshStandardMaterial color={color} emissive={color} emissiveIntensity={0.18} bumpMap={bump} bumpScale={0.002} roughness={0.95} />
       </mesh>
       <mesh position={[0, -p.h / 2 + 0.05, 0]}>
         <boxGeometry args={[p.w + 0.02, 0.1, p.d + 0.02]} />
-        <meshStandardMaterial color={isDark ? '#07070a' : '#322b26'} roughness={0.6} />
+        <meshStandardMaterial color={SKIRT_COLOR} roughness={0.6} />
       </mesh>
       {p.h >= 4.5 && (
         <mesh position={[0, p.h / 2 - 0.04, 0]}>
           <boxGeometry args={[p.w + 0.04, 0.08, p.d + 0.04]} />
-          <meshStandardMaterial color={isDark ? '#191922' : '#f7f3ea'} roughness={0.5} metalness={0} envMapIntensity={0.5} />
+          <meshStandardMaterial color={CROWN_COLOR} roughness={0.5} metalness={0} envMapIntensity={0.5} />
         </mesh>
       )}
     </group>
@@ -102,39 +189,29 @@ function HallPartition({ p, color, bump, isDark }) {
 
 // Wrapped grid pillar anchored to a round sculpture plinth — a central
 // display island. The pillar reads as structure; the plinth carries works.
-function DisplayIsland({ island, isDark }) {
+function DisplayIsland({ island }) {
   const s = island.size;
   return (
     <group position={[island.x, 0, island.z]}>
       <mesh position={[0, ROOM_H / 2, 0]} castShadow>
         <boxGeometry args={[s, ROOM_H, s]} />
-        <meshStandardMaterial
-          color={isDark ? '#17171d' : '#efeae0'}
-          roughness={0.55}
-          metalness={0.25}
-          envMapIntensity={0.45}
-        />
+        <meshStandardMaterial color="#17171d" roughness={0.55} metalness={0.25} envMapIntensity={0.45} />
       </mesh>
       <mesh position={[0, 2.62, 0]}>
         <boxGeometry args={[s + 0.05, 0.05, s + 0.05]} />
-        <meshStandardMaterial color={isDark ? '#26262e' : '#d9d2c4'} metalness={0.5} roughness={0.35} />
+        <meshStandardMaterial color="#26262e" metalness={0.5} roughness={0.35} />
       </mesh>
       <mesh position={[0, 0.09, 0]} castShadow>
         <boxGeometry args={[s + 0.1, 0.18, s + 0.1]} />
-        <meshStandardMaterial color={isDark ? '#07070a' : '#322b26'} roughness={0.6} />
+        <meshStandardMaterial color={SKIRT_COLOR} roughness={0.6} />
       </mesh>
       <mesh position={[0, 0.475, 0]} castShadow receiveShadow>
         <cylinderGeometry args={[0.55, 0.58, 0.95, 24]} />
-        <meshStandardMaterial
-          color={isDark ? '#101014' : '#f4efe6'}
-          roughness={0.85}
-          metalness={0.02}
-          envMapIntensity={0.35}
-        />
+        <meshStandardMaterial color="#101014" roughness={0.85} metalness={0.02} envMapIntensity={0.35} />
       </mesh>
       <mesh position={[0, 0.955, 0]}>
         <cylinderGeometry args={[0.56, 0.56, 0.015, 24]} />
-        <meshStandardMaterial color={isDark ? '#26262e' : '#d9d2c4'} metalness={0.4} roughness={0.4} />
+        <meshStandardMaterial color="#26262e" metalness={0.4} roughness={0.4} />
       </mesh>
     </group>
   );
@@ -142,8 +219,8 @@ function DisplayIsland({ island, isDark }) {
 
 // Narrow-beam accent fixture dedicated to a display island (visual housing +
 // one real tight spotlight aimed straight down the plinth)
-function AccentSpot({ x, z, isDark }) {
-  const lightRef = React.useRef(null);
+function AccentSpot({ x, z }) {
+  const lightRef = useRef(null);
   // SpotLight aims at its .target object, which must live in the scene graph
   const beamTarget = useMemo(() => {
     const t = new THREE.Object3D();
@@ -164,12 +241,7 @@ function AccentSpot({ x, z, isDark }) {
         </mesh>
         <mesh position={[0, -0.12, 0]}>
           <cylinderGeometry args={[0.055, 0.055, 0.03, 12]} />
-          <meshStandardMaterial
-            color="#ffffff"
-            emissive={isDark ? '#eaf4ff' : '#fff4e0'}
-            emissiveIntensity={isDark ? 3.4 : 2.2}
-            roughness={0.25}
-          />
+          <meshStandardMaterial color="#ffffff" emissive="#eaf4ff" emissiveIntensity={3.4} roughness={0.25} />
         </mesh>
       </group>
       <spotLight
@@ -178,9 +250,9 @@ function AccentSpot({ x, z, isDark }) {
         angle={0.32}
         penumbra={0.55}
         distance={7}
-        intensity={isDark ? 42 : 20}
+        intensity={42}
         decay={2}
-        color={isDark ? '#e8f1ff' : '#fff2dc'}
+        color="#e8f1ff"
       />
     </group>
   );
@@ -188,7 +260,7 @@ function AccentSpot({ x, z, isDark }) {
 
 // Concealed LED cove strips at the upper soffits — pure emissive so the
 // bloom pass bounces soft indirect light off the ceiling plane
-function CoveStrips({ isDark }) {
+function CoveStrips() {
   const y = ROOM_H - 0.3;
   const off = 9.76;
   const len = 19.4;
@@ -207,12 +279,7 @@ function CoveStrips({ isDark }) {
           </mesh>
           <mesh position={[0, -0.045, 0.005]}>
             <boxGeometry args={[len, 0.022, 0.03]} />
-            <meshStandardMaterial
-              color="#fff8ee"
-              emissive={isDark ? '#ffe9c4' : '#fff4e0'}
-              emissiveIntensity={isDark ? 2.4 : 1.5}
-              roughness={0.3}
-            />
+            <meshStandardMaterial color="#fff8ee" emissive="#ffe9c4" emissiveIntensity={2.4} roughness={0.3} />
           </mesh>
         </group>
       ))}
@@ -220,183 +287,102 @@ function CoveStrips({ isDark }) {
   );
 }
 
-function GalleryRoom({ theme, wallColor = '#ffffff', hallLayout = 'classic' }) {
-  const isDark = theme === 'dark';
+function TrackHead({ position, rotation }) {
+  return (
+    <group position={position} rotation={rotation}>
+      <mesh geometry={HEAD_GEO} material={TRACK_MAT} />
+      <mesh geometry={LENS_GEO} material={LENS_MAT} position={[0, -0.085, 0]} />
+    </group>
+  );
+}
+
+// Perimeter runs parallel to the display walls with heads angled 30 degrees
+// off vertical toward the art (glare / shadow control)
+function PerimeterTrack({ inset, headSpacing }) {
+  const bar = 9.9 - inset;
+  const span = bar * 2;
+  const tilt = Math.PI / 6;
+
+  const heads = useMemo(() => {
+    const list = [];
+    for (let v = -bar + headSpacing / 2; v <= bar - 0.01; v += headSpacing) list.push(v);
+    return list;
+  }, [bar, headSpacing]);
+
+  // Head canister: local -Y is the beam axis. rotX tilts the beam toward
+  // -Z (back) / +Z (front); rotZ toward -X (left) / +X (right).
+  const sides = [
+    { key: 'back', at: (v) => [v, -0.02, -bar], rot: [tilt, 0, 0] },
+    { key: 'front', at: (v) => [v, -0.02, bar], rot: [-tilt, 0, 0] },
+    { key: 'left', at: (v) => [-bar, -0.02, v], rot: [0, 0, -tilt] },
+    { key: 'right', at: (v) => [bar, -0.02, v], rot: [0, 0, tilt] },
+  ];
+
+  return (
+    <group position={[0, ROOM_H - 0.2, 0]}>
+      {[-bar, bar].map((z) => (
+        <mesh key={`pt-z-${z}`} position={[0, 0, z]} material={TRACK_MAT}>
+          <boxGeometry args={[span, 0.04, 0.05]} />
+        </mesh>
+      ))}
+      {[-bar, bar].map((x) => (
+        <mesh key={`pt-x-${x}`} position={[x, 0, 0]} rotation={[0, Math.PI / 2, 0]} material={TRACK_MAT}>
+          <boxGeometry args={[span, 0.04, 0.05]} />
+        </mesh>
+      ))}
+      {sides.flatMap((side) =>
+        heads.map((v) => (
+          <TrackHead key={`head-${side.key}-${v}`} position={side.at(v)} rotation={side.rot} />
+        ))
+      )}
+    </group>
+  );
+}
+
+// Classic concentric square track frame at +/-8
+function FrameTrack() {
+  return (
+    <group position={[0, ROOM_H - 0.2, 0]}>
+      {[-8, 8].map((z) => (
+        <mesh key={`track-x-${z}`} position={[0, 0, z]} material={TRACK_MAT}>
+          <boxGeometry args={[16, 0.04, 0.04]} />
+        </mesh>
+      ))}
+      {[-8, 8].map((x) => (
+        <mesh key={`track-z-${x}`} position={[x, 0, 0]} rotation={[0, Math.PI / 2, 0]} material={TRACK_MAT}>
+          <boxGeometry args={[16, 0.04, 0.04]} />
+        </mesh>
+      ))}
+    </group>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Room
+// ---------------------------------------------------------------------------
+function GalleryRoom({ wallColor = '#ffffff', hallLayout = 'classic', quality = QUALITY_TIERS.high }) {
   const hall = useMemo(() => getHallLayout(hallLayout), [hallLayout]);
   const lp = hall.lightingPlan;
 
-  // 1. Procedural Floor Color Texture (Warm parquet wood or dark concrete)
-  const floorTexture = useMemo(() => {
-    const canvas = document.createElement('canvas');
-    canvas.width = 512;
-    canvas.height = 512;
-    const ctx = canvas.getContext('2d');
+  const floorTexture = useMemo(() => makeFloorTexture(), []);
+  const floorBumpTexture = useMemo(() => makeFloorBumpTexture(), []);
+  const wallBumpTexture = useMemo(() => makeWallBumpTexture(), []);
 
-    if (isDark) {
-      // Dark theme: Concrete slabs
-      ctx.fillStyle = '#101014';
-      ctx.fillRect(0, 0, 512, 512);
+  // One area light strip per tube row, spanning from the first tube's far
+  // end to the last tube's far end
+  const tubeSpan = Math.max(...lp.tubeXs) - Math.min(...lp.tubeXs) + lp.tubeLength;
 
-      // Fine concrete grit noise
-      for (let i = 0; i < 6000; i++) {
-        const x = Math.random() * 512;
-        const y = Math.random() * 512;
-        const size = Math.random() * 1.5;
-        const opacity = Math.random() * 0.05;
-        ctx.fillStyle = `rgba(255, 255, 255, ${opacity})`;
-        ctx.fillRect(x, y, size, size);
-      }
-
-      // Tile borders
-      ctx.strokeStyle = '#222229';
-      ctx.lineWidth = 4;
-      for (let offset = 0; offset <= 512; offset += 128) {
-        ctx.beginPath(); ctx.moveTo(offset, 0); ctx.lineTo(offset, 512); ctx.stroke();
-        ctx.beginPath(); ctx.moveTo(0, offset); ctx.lineTo(512, offset); ctx.stroke();
-      }
-    } else {
-      // Light theme: Oak wood parquet
-      ctx.fillStyle = '#f5e4cc';
-      ctx.fillRect(0, 0, 512, 512);
-
-      // Fine wood grain fibers
-      for (let i = 0; i < 4000; i++) {
-        const x = Math.random() * 512;
-        const y = Math.random() * 512;
-        const len = Math.random() * 120 + 60;
-        const opacity = Math.random() * 0.06;
-        ctx.fillStyle = `rgba(120, 75, 35, ${opacity})`;
-        ctx.fillRect(x, y, len, 1);
-      }
-
-      // Plank dividers
-      ctx.strokeStyle = '#dabfa3';
-      ctx.lineWidth = 2.5;
-      for (let y = 0; y <= 512; y += 32) {
-        ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(512, y); ctx.stroke();
-
-        const offset = (y % 64 === 0) ? 64 : 0;
-        for (let x = 0; x <= 512; x += 128) {
-          ctx.beginPath(); ctx.moveTo(x + offset, y); ctx.lineTo(x + offset, y + 32); ctx.stroke();
-        }
-      }
-    }
-
-    const texture = new THREE.CanvasTexture(canvas);
-    texture.wrapS = THREE.RepeatWrapping;
-    texture.wrapT = THREE.RepeatWrapping;
-    texture.repeat.set(10, 10);
-    return texture;
-  }, [isDark]);
-
-  // 2. Procedural Floor Bump Map (adds displacement depth for wood plank gaps and concrete grit)
-  const floorBumpTexture = useMemo(() => {
-    const canvas = document.createElement('canvas');
-    canvas.width = 512;
-    canvas.height = 512;
-    const ctx = canvas.getContext('2d');
-
-    // Neutral gray background (no bump height)
-    ctx.fillStyle = '#808080';
-    ctx.fillRect(0, 0, 512, 512);
-
-    if (isDark) {
-      // Concrete roughness noise
-      for (let i = 0; i < 8000; i++) {
-        const x = Math.random() * 512;
-        const y = Math.random() * 512;
-        const size = Math.random() * 2;
-        const brightness = Math.random() * 24 - 12; // light height variation
-        const hex = Math.round(128 + brightness).toString(16).padStart(2, '0');
-        ctx.fillStyle = `#${hex}${hex}${hex}`;
-        ctx.fillRect(x, y, size, size);
-      }
-
-      // Recessed grout lines (black = deeply recessed)
-      ctx.strokeStyle = '#000000';
-      ctx.lineWidth = 4;
-      for (let offset = 0; offset <= 512; offset += 128) {
-        ctx.beginPath(); ctx.moveTo(offset, 0); ctx.lineTo(offset, 512); ctx.stroke();
-        ctx.beginPath(); ctx.moveTo(0, offset); ctx.lineTo(512, offset); ctx.stroke();
-      }
-    } else {
-      // Wood plank height variations
-      for (let y = 0; y < 512; y += 32) {
-        const offset = (y % 64 === 0) ? 64 : 0;
-        for (let x = 0; x < 512; x += 128) {
-          // Give each wood plank a slightly different height shading
-          const heightTint = Math.floor(Math.random() * 8) - 4;
-          const hex = (128 + heightTint).toString(16);
-          ctx.fillStyle = `#${hex}${hex}${hex}`;
-          ctx.fillRect(x + offset, y, 128, 32);
-        }
-      }
-
-      // Very fine noise for wood grain bump
-      for (let i = 0; i < 5000; i++) {
-        const x = Math.random() * 512;
-        const y = Math.random() * 512;
-        const len = Math.random() * 80 + 30;
-        const brightness = Math.random() * 6 - 3;
-        const hex = Math.round(128 + brightness).toString(16).padStart(2, '0');
-        ctx.fillStyle = `#${hex}${hex}${hex}`;
-        ctx.fillRect(x, y, len, 1);
-      }
-
-      // Deep grooves between wood planks (black lines)
-      ctx.strokeStyle = '#000000';
-      ctx.lineWidth = 2.5;
-      for (let y = 0; y <= 512; y += 32) {
-        ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(512, y); ctx.stroke();
-        const offset = (y % 64 === 0) ? 64 : 0;
-        for (let x = 0; x <= 512; x += 128) {
-          ctx.beginPath(); ctx.moveTo(x + offset, y); ctx.lineTo(x + offset, y + 32); ctx.stroke();
-        }
-      }
-    }
-
-    const texture = new THREE.CanvasTexture(canvas);
-    texture.wrapS = THREE.RepeatWrapping;
-    texture.wrapT = THREE.RepeatWrapping;
-    texture.repeat.set(10, 10);
-    return texture;
-  }, [isDark]);
-
-  // 3. Procedural Wall Drywall Plaster Bump Texture (makes walls look textured instead of flat CGI)
-  const wallBumpTexture = useMemo(() => {
-    const canvas = document.createElement('canvas');
-    canvas.width = 128;
-    canvas.height = 128;
-    const ctx = canvas.getContext('2d');
-
-    // Neutral gray base
-    ctx.fillStyle = '#808080';
-    ctx.fillRect(0, 0, 128, 128);
-
-    // Fine drywall noise speckles
-    for (let i = 0; i < 4000; i++) {
-      const x = Math.random() * 128;
-      const y = Math.random() * 128;
-      const size = Math.random() * 1.5;
-      const val = Math.round(128 + (Math.random() * 10 - 5));
-      const hex = val.toString(16).padStart(2, '0');
-      ctx.fillStyle = `#${hex}${hex}${hex}`;
-      ctx.fillRect(x, y, size, size);
-    }
-
-    const texture = new THREE.CanvasTexture(canvas);
-    texture.wrapS = THREE.RepeatWrapping;
-    texture.wrapT = THREE.RepeatWrapping;
-    texture.repeat.set(15, 15); // Fine repetitions
-    return texture;
-  }, []);
-
-  const wallColorFinal = wallColor;
-  const partitionColor = wallColor;
-
-  const crownColor = isDark ? '#191922' : '#f7f3ea';
-  const skirtColor = isDark ? '#07070a' : '#7d6e5d';
-  const skirtMat = <meshStandardMaterial color={skirtColor} roughness={0.6} metalness={0.05} envMapIntensity={0.4} />;
+  const wallMat = (
+    <meshStandardMaterial
+      color={wallColor}
+      emissive={wallColor}
+      emissiveIntensity={0.18}
+      bumpMap={wallBumpTexture}
+      bumpScale={0.002}
+      roughness={0.95}
+    />
+  );
+  const skirtMat = <meshStandardMaterial color={SKIRT_COLOR} roughness={0.6} metalness={0.05} envMapIntensity={0.4} />;
 
   const wallRuns = [
     { pos: [0, -9.883], rotY: 0 },
@@ -413,118 +399,62 @@ function GalleryRoom({ theme, wallColor = '#ffffff', hallLayout = 'classic' }) {
 
   return (
     <group>
-      {/* 1. FLOOR (Physical Material with bump map and high specularity) */}
-      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0, 0]} receiveShadow>
-        <planeGeometry args={[20, 20]} />
-        <meshStandardMaterial 
-          map={floorTexture}
-          bumpMap={floorBumpTexture}
-          bumpScale={isDark ? 0.004 : 0.007}
-          roughness={isDark ? 0.25 : 0.35}
-          metalness={isDark ? 0.1 : 0.02}
-          envMapIntensity={isDark ? 0.9 : 0.55}
-        />
-      </mesh>
+      {/* Structure the walk-mode aim ray may hit or be blocked by */}
+      <AimTargets>
+        {/* 1. FLOOR (bump-mapped concrete with a soft sheen) */}
+        <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0, 0]} receiveShadow>
+          <planeGeometry args={[20, 20]} />
+          <meshStandardMaterial
+            map={floorTexture}
+            bumpMap={floorBumpTexture}
+            bumpScale={0.004}
+            roughness={0.25}
+            metalness={0.1}
+            envMapIntensity={0.9}
+          />
+        </mesh>
 
-      {/* Traditional Nepalese Hand-Knotted Wool Carpets (Galaincha) - Pure Procedural Render */}
-      {/* 1. Grand Durbar Vishvavajra Mandala Carpet under central bench */}
-      <NepaleseCarpet
-        position={[0, 0.001, -4.0]}
-        size={[4.2, 2.8]}
-        variant="mandala"
-        hasFringes={true}
-        fringeSide="x"
-      />
-      {/* 2. Replicated Mandala Carpet at front entrance */}
-      <NepaleseCarpet
-        position={[0, 0.001, 5.5]}
-        size={[4.4, 2.4]}
-        variant="mandala"
-        hasFringes={true}
-        fringeSide="x"
-      />
-      {/* 3. Himalayan Saffron Gold Dragon & Cloud Rug in left wing */}
-      <NepaleseCarpet
-        position={[-5.2, 0.001, -1.0]}
-        size={[3.2, 2.2]}
-        variant="royal_dragon"
-        hasFringes={true}
-        fringeSide="x"
-      />
-      {/* 4. Himalayan Saffron Gold Dragon & Cloud Rug in right wing (matching left) */}
-      <NepaleseCarpet
-        position={[5.2, 0.001, -1.0]}
-        size={[3.2, 2.2]}
-        variant="royal_dragon"
-        hasFringes={true}
-        fringeSide="x"
-      />
+        {/* 2. WALLS (drywall plaster bump map for micro-shadows) */}
+        <mesh position={[0, ROOM_H / 2, -10]} receiveShadow>
+          <boxGeometry args={[20, ROOM_H, 0.2]} />
+          {wallMat}
+        </mesh>
+        <mesh position={[-10, ROOM_H / 2, 0]} rotation={[0, Math.PI / 2, 0]} receiveShadow>
+          <boxGeometry args={[20, ROOM_H, 0.2]} />
+          {wallMat}
+        </mesh>
+        <mesh position={[10, ROOM_H / 2, 0]} rotation={[0, -Math.PI / 2, 0]} receiveShadow>
+          <boxGeometry args={[20, ROOM_H, 0.2]} />
+          {wallMat}
+        </mesh>
 
-      {/* 2. CEILING */}
+        {/* Front wall replaced by entrance assembly: segmented wall, doorway,
+            vestibule, double doors and title lettering */}
+        <EntranceWall wallBump={wallBumpTexture} wallColor={wallColor} />
+
+        {/* 3. INTERNAL PARTITIONS — hall-layout driven (center partition or baffles) */}
+        {hall.partitions.map((p) => (
+          <HallPartition key={p.id} p={p} color={wallColor} bump={wallBumpTexture} />
+        ))}
+
+        {/* 4. CENTRAL DISPLAY ISLANDS (Chronological Loop): wrapped pillars + plinths */}
+        {hall.islands.map((island) => (
+          <DisplayIsland key={island.id} island={island} />
+        ))}
+      </AimTargets>
+
+      {/* Traditional Nepalese hand-knotted wool carpets — procedural */}
+      <NepaleseCarpet position={[0, 0.001, -4.0]} size={[4.2, 2.8]} variant="mandala" fringeThreads={quality.fringeThreads} />
+      <NepaleseCarpet position={[0, 0.001, 5.5]} size={[4.4, 2.4]} variant="mandala" fringeThreads={quality.fringeThreads} />
+      <NepaleseCarpet position={[-5.2, 0.001, -1.0]} size={[3.2, 2.2]} variant="royal_dragon" fringeThreads={quality.fringeThreads} />
+      <NepaleseCarpet position={[5.2, 0.001, -1.0]} size={[3.2, 2.2]} variant="royal_dragon" fringeThreads={quality.fringeThreads} />
+
+      {/* 5. CEILING */}
       <mesh rotation={[Math.PI / 2, 0, 0]} position={[0, ROOM_H, 0]}>
         <planeGeometry args={[20, 20]} />
-        <meshStandardMaterial 
-          color='#ffffff' 
-          roughness={0.9} 
-        />
+        <meshStandardMaterial color="#ffffff" roughness={0.9} />
       </mesh>
-
-      {/* Ceiling detail (perimeter band + subtle cage grid) */}
-      <CeilingDetail theme={theme} />
-
-      {/* 3. WALLS (Configured with Drywall plaster bump map for micro-shadows) */}
-      {/* Back Wall (Z = -10) */}
-      <mesh position={[0, ROOM_H / 2, -10]} receiveShadow>
-        <boxGeometry args={[20, ROOM_H, 0.2]} />
-        <meshStandardMaterial
-          color={wallColorFinal}
-          emissive={wallColorFinal}
-          emissiveIntensity={isDark ? 0.18 : 0.1}
-          bumpMap={wallBumpTexture}
-          bumpScale={0.002}
-          roughness={0.95}
-        />
-      </mesh>
-
-      {/* Left Wall (X = -10) */}
-      <mesh position={[-10, ROOM_H / 2, 0]} rotation={[0, Math.PI / 2, 0]} receiveShadow>
-        <boxGeometry args={[20, ROOM_H, 0.2]} />
-        <meshStandardMaterial
-          color={wallColorFinal}
-          emissive={wallColorFinal}
-          emissiveIntensity={isDark ? 0.18 : 0.1}
-          bumpMap={wallBumpTexture}
-          bumpScale={0.002}
-          roughness={0.95}
-        />
-      </mesh>
-
-      {/* Right Wall (X = 10) */}
-      <mesh position={[10, ROOM_H / 2, 0]} rotation={[0, -Math.PI / 2, 0]} receiveShadow>
-        <boxGeometry args={[20, ROOM_H, 0.2]} />
-        <meshStandardMaterial
-          color={wallColorFinal}
-          emissive={wallColorFinal}
-          emissiveIntensity={isDark ? 0.18 : 0.1}
-          bumpMap={wallBumpTexture}
-          bumpScale={0.002}
-          roughness={0.95}
-        />
-      </mesh>
-
-      {/* Front Wall replaced by entrance assembly: segmented wall, doorway,
-          vestibule, double doors and title lettering */}
-      <EntranceWall theme={theme} wallBump={wallBumpTexture} wallColor={wallColorFinal} />
-
-      {/* 4. INTERNAL PARTITIONS — hall-layout driven (center partition or baffles) */}
-      {hall.partitions.map((p) => (
-        <HallPartition key={p.id} p={p} color={partitionColor} bump={wallBumpTexture} isDark={isDark} />
-      ))}
-
-      {/* 5. CENTRAL DISPLAY ISLANDS (Chronological Loop): wrapped pillars + plinths */}
-      {hall.islands.map((island) => (
-        <DisplayIsland key={island.id} island={island} isDark={isDark} />
-      ))}
+      <CeilingDetail />
 
       {/* Ceiling crown cornice — classical swept profile, mitered corners,
           laid flat 2mm below the ceiling plane (no coplanar faces) */}
@@ -536,7 +466,7 @@ function GalleryRoom({ theme, wallColor = '#ffffff', hallLayout = 'classic' }) {
         receiveShadow
       >
         <meshStandardMaterial
-          color={crownColor}
+          color={CROWN_COLOR}
           bumpMap={wallBumpTexture}
           bumpScale={0.0012}
           roughness={0.5}
@@ -581,171 +511,41 @@ function GalleryRoom({ theme, wallColor = '#ffffff', hallLayout = 'classic' }) {
       <group position={[0, 0.05, 0]}>
         <mesh position={[0, 0, -9.89]}>
           <boxGeometry args={[20, 0.1, 0.02]} />
-          <meshStandardMaterial color={isDark ? '#07070a' : '#7d6e5d'} />
+          <meshStandardMaterial color={SKIRT_COLOR} />
         </mesh>
         <mesh position={[-9.89, 0, 0]} rotation={[0, Math.PI / 2, 0]}>
           <boxGeometry args={[20, 0.1, 0.02]} />
-          <meshStandardMaterial color={isDark ? '#07070a' : '#7d6e5d'} />
+          <meshStandardMaterial color={SKIRT_COLOR} />
         </mesh>
         <mesh position={[9.89, 0, 0]} rotation={[0, -Math.PI / 2, 0]}>
           <boxGeometry args={[20, 0.1, 0.02]} />
-          <meshStandardMaterial color={isDark ? '#07070a' : '#7d6e5d'} />
+          <meshStandardMaterial color={SKIRT_COLOR} />
         </mesh>
       </group>
 
-      {/* Ceiling Tube Lights — rows aligned with the skipped grid axes in CeilingDetail.
-          Each TubeLight fixture embeds its own linear RectAreaLight emitting downward. */}
+      {/* Ceiling tube lights — rows aligned with the skipped grid axes in
+          CeilingDetail — plus one linear area light per row */}
       {lp.tubeRows.flatMap((z) =>
         lp.tubeXs.map((x) => (
-          <TubeLight key={`tube-${x}-${z}`} position={[x, ROOM_H - 0.06, z]} length={lp.tubeLength} isDark={isDark} />
+          <TubeLight key={`tube-${x}-${z}`} position={[x, ROOM_H - 0.06, z]} length={lp.tubeLength} />
         ))
       )}
+      {quality.rectAreaLights &&
+        lp.tubeRows.map((z) => <TubeRowLight key={`tube-row-${z}`} z={z} span={tubeSpan} />)}
 
       {/* Concealed cove lighting — Chronological Loop soffit bounce */}
-      {lp.cove && <CoveStrips isDark={isDark} />}
+      {lp.cove && <CoveStrips />}
 
       {/* Narrow-beam accent spots dedicated to sculpture islands */}
       {lp.accentSpots.map((x) => (
-        <AccentSpot key={`accent-${x}`} x={x} z={lp.accentZ} isDark={isDark} />
+        <AccentSpot key={`accent-${x}`} x={x} z={lp.accentZ} />
       ))}
 
-      {/* Ceiling Track Lighting */}
+      {/* Ceiling track lighting */}
       {lp.trackStyle === 'perimeter' ? (
-        /* Perimeter runs parallel to the display walls with heads angled
-           30 degrees off vertical toward the art (glare / shadow control) */
-        <group position={[0, ROOM_H - 0.2, 0]}>
-          {(() => {
-            const trackMat = (
-              <meshStandardMaterial color="#1a1a1a" metalness={0.8} roughness={0.15} />
-            );
-            const bar = 9.9 - lp.trackInset;
-            const span = bar * 2;
-            const tilt = Math.PI / 6; // 30 degrees
-            // Head canister: local -Y is the beam axis. rotX tilts the beam
-            // toward -Z (back) / +Z (front); rotZ toward -X (left) / +X (right).
-            const HEAD_ROT = {
-              back: [tilt, 0, 0],
-              front: [-tilt, 0, 0],
-              left: [0, 0, -tilt],
-              right: [0, 0, tilt],
-            };
-            const heads = [];
-            for (let v = -bar + lp.headSpacing / 2; v <= bar - 0.01; v += lp.headSpacing) {
-              heads.push(v);
-            }
-            return (
-              <>
-                {/* Track bars */}
-                {[-bar, bar].map((z) => (
-                  <mesh key={`pt-z-${z}`} position={[0, 0, z]}>
-                    <boxGeometry args={[span, 0.04, 0.05]} />
-                    {trackMat}
-                  </mesh>
-                ))}
-                {[-bar, bar].map((x) => (
-                  <mesh key={`pt-x-${x}`} position={[x, 0, 0]} rotation={[0, Math.PI / 2, 0]}>
-                    <boxGeometry args={[span, 0.04, 0.05]} />
-                    {trackMat}
-                  </mesh>
-                ))}
-                {/* 30-degree angled spotlight heads */}
-                {heads.map((v) => (
-                  <group key={`head-b-${v}`} position={[v, -0.02, -bar]} rotation={HEAD_ROT.back}>
-                    <mesh>
-                      <cylinderGeometry args={[0.042, 0.055, 0.16, 10]} />
-                      {trackMat}
-                    </mesh>
-                    <mesh position={[0, -0.085, 0]}>
-                      <cylinderGeometry args={[0.038, 0.038, 0.014, 10]} />
-                      <meshStandardMaterial
-                        color="#ffffff"
-                        emissive={isDark ? '#eaf4ff' : '#fff4e0'}
-                        emissiveIntensity={isDark ? 2.6 : 1.6}
-                        roughness={0.3}
-                      />
-                    </mesh>
-                  </group>
-                ))}
-                {heads.map((v) => (
-                  <group key={`head-f-${v}`} position={[v, -0.02, bar]} rotation={HEAD_ROT.front}>
-                    <mesh>
-                      <cylinderGeometry args={[0.042, 0.055, 0.16, 10]} />
-                      {trackMat}
-                    </mesh>
-                    <mesh position={[0, -0.085, 0]}>
-                      <cylinderGeometry args={[0.038, 0.038, 0.014, 10]} />
-                      <meshStandardMaterial
-                        color="#ffffff"
-                        emissive={isDark ? '#eaf4ff' : '#fff4e0'}
-                        emissiveIntensity={isDark ? 2.6 : 1.6}
-                        roughness={0.3}
-                      />
-                    </mesh>
-                  </group>
-                ))}
-                {heads.map((v) => (
-                  <group key={`head-l-${v}`} position={[-bar, -0.02, v]} rotation={HEAD_ROT.left}>
-                    <mesh>
-                      <cylinderGeometry args={[0.042, 0.055, 0.16, 10]} />
-                      {trackMat}
-                    </mesh>
-                    <mesh position={[0, -0.085, 0]}>
-                      <cylinderGeometry args={[0.038, 0.038, 0.014, 10]} />
-                      <meshStandardMaterial
-                        color="#ffffff"
-                        emissive={isDark ? '#eaf4ff' : '#fff4e0'}
-                        emissiveIntensity={isDark ? 2.6 : 1.6}
-                        roughness={0.3}
-                      />
-                    </mesh>
-                  </group>
-                ))}
-                {heads.map((v) => (
-                  <group key={`head-r-${v}`} position={[bar, -0.02, v]} rotation={HEAD_ROT.right}>
-                    <mesh>
-                      <cylinderGeometry args={[0.042, 0.055, 0.16, 10]} />
-                      {trackMat}
-                    </mesh>
-                    <mesh position={[0, -0.085, 0]}>
-                      <cylinderGeometry args={[0.038, 0.038, 0.014, 10]} />
-                      <meshStandardMaterial
-                        color="#ffffff"
-                        emissive={isDark ? '#eaf4ff' : '#fff4e0'}
-                        emissiveIntensity={isDark ? 2.6 : 1.6}
-                        roughness={0.3}
-                      />
-                    </mesh>
-                  </group>
-                ))}
-              </>
-            );
-          })()}
-        </group>
+        <PerimeterTrack inset={lp.trackInset} headSpacing={lp.headSpacing} />
       ) : (
-        /* Classic concentric frame */
-        <group position={[0, ROOM_H - 0.2, 0]}>
-          {(() => {
-            const trackMat = (
-              <meshStandardMaterial color="#1a1a1a" metalness={0.8} roughness={0.15} />
-            );
-            return (
-              <>
-                {[-8, 8].map((z) => (
-                  <mesh key={`track-x-${z}`} position={[0, 0, z]}>
-                    <boxGeometry args={[16, 0.04, 0.04]} />
-                    {trackMat}
-                  </mesh>
-                ))}
-                {[-8, 8].map((x) => (
-                  <mesh key={`track-z-${x}`} position={[x, 0, 0]} rotation={[0, Math.PI / 2, 0]}>
-                    <boxGeometry args={[16, 0.04, 0.04]} />
-                    {trackMat}
-                  </mesh>
-                ))}
-              </>
-            );
-          })()}
-        </group>
+        <FrameTrack />
       )}
     </group>
   );

@@ -1,6 +1,7 @@
-import React, { useRef, useEffect, useCallback } from 'react';
+import React, { useRef, useEffect, useCallback, useMemo } from 'react';
 import { useFrame, useThree } from '@react-three/fiber';
 import * as THREE from 'three';
+import { AIM_LAYER } from '../../constants';
 
 const WALK_SPEED = 1.8; // Relaxed, elegant museum stroll pace
 const SPRINT_SPEED = 3.2; // Brisk walk pace
@@ -133,7 +134,14 @@ export default function WalkControls({
   const keys = useRef({});
   const vel = useRef(new THREE.Vector3());
   const lookDrag = useRef(null); // { id, x, y, sx, sy } active touch/drag for looking
-  const raycaster = useRef(new THREE.Raycaster());
+  // Only objects on AIM_LAYER (walls, plaques, bench, board — see AimTargets)
+  // are tested, so decorative geometry never enters the 20 Hz centre-ray scan
+  const raycaster = useMemo(() => {
+    const r = new THREE.Raycaster();
+    r.layers.set(AIM_LAYER);
+    r.far = INTERACT_DISTANCE; // nothing beyond reach can be selected at all
+    return r;
+  }, []);
   const CENTER = useRef(new THREE.Vector2(0, 0));
   const focusIdRef = useRef(null);
   const focusClock = useRef(0);
@@ -153,13 +161,7 @@ export default function WalkControls({
   const headBobY = useRef(0);
   const headRollZ = useRef(0);
 
-  const plSupported =
-    typeof document !== 'undefined' &&
-    typeof gl?.domElement?.requestPointerLock === 'function';
-  const plSupportedRef = useRef(plSupported);
-  plSupportedRef.current = plSupported;
-
-  const respawn = () => {
+  const respawn = useCallback(() => {
     camera.position.set(SPAWN.x, SPAWN.y, SPAWN.z);
     yaw.current = SPAWN.yaw;
     pitch.current = SPAWN.pitch;
@@ -172,10 +174,10 @@ export default function WalkControls({
     idleTimer.current = 0;
     headBobY.current = 0;
     headRollZ.current = 0;
-  };
+  }, [camera]);
 
-  // Occlusion-aware center picking: raycast the WHOLE scene and let the
-  // nearest hit decide. A wall, floor or doorway closer than the target
+  // Occlusion-aware center picking: raycast everything on AIM_LAYER and let
+  // the nearest hit decide. A wall, floor or doorway closer than the target
   // blocks it, so artwork can never be inspected through geometry, and
   // nothing beyond INTERACT_DISTANCE can be selected at all.
   //
@@ -184,10 +186,8 @@ export default function WalkControls({
   // frame shows no inspect prompt. Benches and portals stay fully clickable.
   const resolveCenterTarget = useCallback(() => {
     if (!scene) return null;
-    raycaster.current.setFromCamera(CENTER.current, camera);
-    raycaster.current.far = INTERACT_DISTANCE;
-    const hits = raycaster.current.intersectObjects(scene.children, true);
-    raycaster.current.far = Infinity;
+    raycaster.setFromCamera(CENTER.current, camera);
+    const hits = raycaster.intersectObjects(scene.children, true);
     if (hits.length === 0) return null;
 
     // Walk up from the nearest struck mesh to find what owns it
@@ -202,7 +202,7 @@ export default function WalkControls({
       o = o.parent;
     }
     return null;
-  }, [camera, scene]);
+  }, [camera, scene, raycaster]);
 
   // Viewing pose for inspecting an artwork
   const viewPoseFor = useCallback(
@@ -288,7 +288,7 @@ export default function WalkControls({
   // Respawn
   useEffect(() => {
     if (resetSignal > 0) respawn();
-  }, [resetSignal]);
+  }, [resetSignal, respawn]);
 
   // Room-change door transition: glide out through the entrance, fade to
   // black crossing the threshold, then fade back in inside the vestibule
@@ -323,7 +323,7 @@ export default function WalkControls({
     const dom = gl.domElement;
     if (!dom) return;
 
-    window.__galleryCamera = camera;
+    const plSupported = typeof dom.requestPointerLock === 'function';
 
     const isLocked = () =>
       typeof document !== 'undefined' && document.pointerLockElement === dom;
@@ -336,7 +336,7 @@ export default function WalkControls({
       console.warn('[WalkControls] Pointer lock unavailable — falling back to drag-to-look');
       onLockError?.();
     };
-    if (!plSupportedRef.current) handleLockFailure();
+    if (!plSupported) handleLockFailure();
 
     if (lockRequestRef) {
       lockRequestRef.current = () => {
@@ -410,7 +410,7 @@ export default function WalkControls({
     };
 
     // Desktop: click painting to inspect, click bench to sit, or click empty space to lock cursor
-    const onMouseDown = (e) => {
+    const onMouseDown = () => {
       if (isInputActive() || cine.current || transit.current) return;
 
       const targetId = resolveCenterTarget();
@@ -427,7 +427,7 @@ export default function WalkControls({
         return;
       }
 
-      if (plSupportedRef.current && !isLocked() && !plBrokenRef.current) {
+      if (plSupported && !isLocked() && !plBrokenRef.current) {
         try {
           const p = dom.requestPointerLock();
           if (p && typeof p.catch === 'function') p.catch(handleLockFailure);
@@ -456,7 +456,7 @@ export default function WalkControls({
 
     const onPointerDown = (e) => {
       if (cine.current || transit.current) return;
-      if (e.pointerType === 'mouse' && plSupportedRef.current && !plBrokenRef.current) return;
+      if (e.pointerType === 'mouse' && plSupported && !plBrokenRef.current) return;
       lookDrag.current = { id: e.pointerId, x: e.clientX, y: e.clientY, sx: e.clientX, sy: e.clientY };
     };
     const onPointerMove = (e) => {
@@ -544,7 +544,7 @@ export default function WalkControls({
       dom.removeEventListener('pointerup', onPointerUp);
       dom.removeEventListener('pointercancel', onPointerUp);
     };
-  }, [gl, camera, scene, onSelectArtwork, onSitBench, isSeated, onStandUp, onLockChange, onLockError, onFocusChange, lockRequestRef, resolveCenterTarget]);
+  }, [gl, camera, scene, onSelectArtwork, onSitBench, isSeated, onStandUp, onLockChange, onLockError, onFocusChange, onEnterPortal, lockRequestRef, resolveCenterTarget]);
 
   useFrame((_, delta) => {
     const dt = Math.min(delta, 0.05);

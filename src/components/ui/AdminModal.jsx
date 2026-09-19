@@ -18,8 +18,6 @@ import {
   Eye,
   ArrowUp,
   ArrowDown,
-  Compass,
-  Layers,
   Lock,
   LogOut
 } from 'lucide-react';
@@ -1222,7 +1220,7 @@ export default function AdminModal({
                 artworks.map((art) => (
                   <div key={art.id} className="flex items-center justify-between p-3 bg-[#181818] border border-white/10">
                     <div className="flex items-center gap-3">
-                      <img src={art.imageUrl} alt={art.title} className="w-12 h-12 object-cover rounded-none border border-white/10" />
+                      <img src={art.imageUrlSm || art.imageUrl} alt={art.title} className="w-12 h-12 object-cover rounded-none border border-white/10" />
                       <div>
                         <h4 className="text-xs font-bold text-[#FAFAFA]">{art.title}</h4>
                         <p className="text-[10px] text-slate-400">{art.artist} • {art.widthIn}″ × {art.heightIn}″ • Wall: {art.wallId}</p>

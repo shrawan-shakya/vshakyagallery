@@ -1,6 +1,9 @@
-import React, { useState, useMemo, useEffect, memo } from 'react';
+import React, { useState, memo } from 'react';
 import { useCursor } from '@react-three/drei';
 import * as THREE from 'three';
+import AimTargets from './AimTargets';
+import { useCanvasTexture } from '../../hooks/useCanvasTexture';
+import { SERIF_FONT, setLetterSpacing } from '../../utils/canvasText';
 
 // Sandwich-board proportions
 const BOARD_W = 0.78; // leaf width
@@ -36,12 +39,8 @@ function makeBoardTexture(title) {
 
   // Header
   ctx.fillStyle = '#241a12';
-  try {
-    ctx.letterSpacing = '9px';
-  } catch {
-    /* older browsers */
-  }
-  ctx.font = '600 42px Georgia, serif';
+  setLetterSpacing(ctx, 9);
+  ctx.font = `600 42px ${SERIF_FONT}`;
   ctx.fillText('NEXT WING', c.width / 2, 100);
 
   // Gold divider
@@ -53,17 +52,13 @@ function makeBoardTexture(title) {
   ctx.stroke();
 
   // Wrapped exhibition title, shrunk until it fits the panel
-  try {
-    ctx.letterSpacing = '2px';
-  } catch {
-    /* ignore */
-  }
+  setLetterSpacing(ctx, 2);
   const raw = String(title || 'Gallery').toUpperCase().trim();
   const maxTextW = c.width - 110;
   let size = 54;
   let lines = [];
   for (;;) {
-    ctx.font = `700 ${size}px Georgia, serif`;
+    ctx.font = `700 ${size}px ${SERIF_FONT}`;
     lines = [];
     let cur = '';
     for (const word of raw.split(/\s+/)) {
@@ -93,12 +88,8 @@ function makeBoardTexture(title) {
 
   // Call-to-action footer
   ctx.fillStyle = '#241a12';
-  try {
-    ctx.letterSpacing = '6px';
-  } catch {
-    /* ignore */
-  }
-  ctx.font = '500 27px Georgia, serif';
+  setLetterSpacing(ctx, 6);
+  ctx.font = `500 27px ${SERIF_FONT}`;
   ctx.fillText('CLICK TO CHOOSE', c.width / 2, 388);
 
   const tex = new THREE.CanvasTexture(c);
@@ -168,15 +159,13 @@ function RoomPortal({
   onEnterPortal
 }) {
   const [hovered, setHovered] = useState(false);
-  const faceTex = useMemo(() => makeBoardTexture(nextRoomTitle), [nextRoomTitle]);
-
-  useEffect(() => () => faceTex.dispose(), [faceTex]);
+  const faceTex = useCanvasTexture(() => makeBoardTexture(nextRoomTitle), [nextRoomTitle]);
 
   useCursor(hovered);
 
   return (
     <group position={position} rotation={rotation}>
-      <group
+      <AimTargets
         userData={{ isPortal: true }}
         onClick={(e) => {
           e.stopPropagation();
@@ -216,7 +205,7 @@ function RoomPortal({
             <Leaf />
           </group>
         </group>
-      </group>
+      </AimTargets>
     </group>
   );
 }

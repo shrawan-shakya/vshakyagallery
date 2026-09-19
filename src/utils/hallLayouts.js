@@ -236,26 +236,3 @@ export function getHallOptions() {
   }));
 }
 
-/**
- * Compute world position + rotation for an artwork hung on a wall of this hall.
- * Mirrors the legacy computeWallPosition contract.
- */
-export function computeWallPosition(wallId, indexOnWall, totalOnWall, hallLayoutId) {
-  const configs = getWallConfigs(hallLayoutId);
-  const config = configs[wallId] || configs.back;
-  const { center, rotation, spanMin, spanMax, axis } = config;
-
-  let offset = 0;
-  if (totalOnWall > 1) {
-    const step = (spanMax - spanMin) / (totalOnWall + 1);
-    offset = spanMin + step * (indexOnWall + 1);
-  }
-
-  const posX = axis === 'x' ? offset : center[0];
-  const posZ = axis === 'z' ? offset : center[2];
-
-  return {
-    position: [posX, center[1], posZ],
-    rotation,
-  };
-}

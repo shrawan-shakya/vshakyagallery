@@ -628,16 +628,30 @@ function createWoolKnotBumpTexture() {
   return texture;
 }
 
+// One texture per variant, shared by every carpet that uses it — the 40k-fill
+// canvas generator above is the most expensive thing in the room to build
+const carpetTextureCache = new Map();
+function getCarpetTexture(variant) {
+  if (!carpetTextureCache.has(variant)) {
+    carpetTextureCache.set(variant, createProceduralNepaleseCarpetTexture(variant));
+  }
+  return carpetTextureCache.get(variant);
+}
+
+let woolKnotBumpTexture = null;
+function getWoolKnotBumpTexture() {
+  woolKnotBumpTexture ??= createWoolKnotBumpTexture();
+  return woolKnotBumpTexture;
+}
+
 /**
  * Ultra-Performance Instanced White/Off-White Wool Fringes Component.
  * Reduces 2,000 WebGL draw calls down to 2 draw calls per carpet!
  */
 
-function DenseFringesInstanced({ width, depth, pileThickness, hasFringes }) {
+function DenseFringesInstanced({ width, depth, pileThickness, hasFringes, threadsPerSide }) {
   const leftRef = useRef(null);
   const rightRef = useRef(null);
-
-  const threadsPerSide = 140; // High-density plush count
   const halfW = width / 2;
   const fringeY = pileThickness * 0.3;
 
@@ -668,7 +682,7 @@ function DenseFringesInstanced({ width, depth, pileThickness, hasFringes }) {
       items.push({ posZ, posY, rotY, rotZ, len, color });
     }
     return items;
-  }, [hasFringes, depth]);
+  }, [hasFringes, depth, threadsPerSide]);
 
   useLayoutEffect(() => {
     if (!hasFringes || fringeParams.length === 0) return;
@@ -725,6 +739,7 @@ function DenseFringesInstanced({ width, depth, pileThickness, hasFringes }) {
       {/* 1 Single WebGL Draw Call for Left Instanced Off-White Wool Fringes (-X) */}
       <group position={[-halfW - 0.08, fringeY, 0]}>
         <instancedMesh
+          key={threadsPerSide}
           ref={leftRef}
           args={[fringeGeometry, fringeMaterial, threadsPerSide]}
           receiveShadow
@@ -734,6 +749,7 @@ function DenseFringesInstanced({ width, depth, pileThickness, hasFringes }) {
       {/* 1 Single WebGL Draw Call for Right Instanced Off-White Wool Fringes (+X) */}
       <group position={[halfW + 0.08, fringeY, 0]}>
         <instancedMesh
+          key={threadsPerSide}
           ref={rightRef}
           args={[fringeGeometry, fringeMaterial, threadsPerSide]}
           receiveShadow
@@ -750,14 +766,13 @@ function NepaleseCarpet({
   variant = 'mandala', // 'mandala' | 'runner' | 'royal_dragon' | 'entrance_welcome'
   hasFringes = true,
   pileThickness = 0.014, // 14mm pile thickness
+  fringeThreads = 140, // tassels per side (quality tier)
 }) {
   const [width, depth] = size;
 
-  // 1. Generate master procedural Nepalese carpet vector canvas texture
-  const carpetMap = useMemo(() => createProceduralNepaleseCarpetTexture(variant), [variant]);
-
-  // 2. Generate micro-knot wool bump texture
-  const knotBumpMap = useMemo(() => createWoolKnotBumpTexture(), []);
+  // Textures are shared per variant across every carpet in the room
+  const carpetMap = getCarpetTexture(variant);
+  const knotBumpMap = getWoolKnotBumpTexture();
 
   const halfW = width / 2;
   const halfD = depth / 2;
@@ -803,6 +818,7 @@ function NepaleseCarpet({
         depth={depth}
         pileThickness={pileThickness}
         hasFringes={hasFringes}
+        threadsPerSide={fringeThreads}
       />
     </group>
   );

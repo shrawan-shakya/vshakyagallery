@@ -20,3 +20,6 @@ gallery.db-wal
 *.log
 .DS_Store
 Thumbs.db
+
+# Rolling SQLite backups written by server.js (rotated on boot, never commit)
+backups/

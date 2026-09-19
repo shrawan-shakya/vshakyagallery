@@ -6,8 +6,6 @@ import {
   HelpCircle, 
   X, 
   BookOpen, 
-  Sun, 
-  Moon, 
   Sparkles,
   MousePointerClick,
   Keyboard,
@@ -17,13 +15,13 @@ import {
   Armchair,
   Volume1,
   Volume2,
-  VolumeX
+  VolumeX,
+  Gauge
 } from 'lucide-react';
 import { ambientSoundscape } from '../../utils/ambientAudio';
 
 export default function HUD({
   mode,
-  viewMode,
   onToggleMode,
   selectedArtwork,
   isSeated = false,
@@ -32,35 +30,23 @@ export default function HUD({
   onOpenAdmin,
   artworks = [],
   rooms = [],
-  artists = [],
   currentRoomId = 'room-main',
   onSelectRoom,
   onSelectArtwork,
   focusTarget,
-  focusedArtwork,
   isLocked = false,
   lockFailed = false,
   lockRequestRef,
-  isTouchDevice: externalIsTouchDevice,
-  theme: externalTheme,
-  setTheme: externalSetTheme,
+  isTouchDevice = false,
+  quality,
+  qualityPreference = 'auto',
+  onCycleQuality,
 }) {
   const [showHelp, setShowHelp] = useState(false);
   const [showGuide, setShowGuide] = useState(false);
   const [showWalkOverlay, setShowWalkOverlay] = useState(false);
   const [hasWalkedOnce, setHasWalkedOnce] = useState(false);
-  const [internalIsTouchDevice, setInternalIsTouchDevice] = useState(false);
   const [isMusicPlaying, setIsMusicPlaying] = useState(true);
-
-  const isTouchDevice = externalIsTouchDevice !== undefined ? externalIsTouchDevice : internalIsTouchDevice;
-
-  useEffect(() => {
-    if (typeof window !== 'undefined') {
-      setInternalIsTouchDevice(
-        'ontouchstart' in window || navigator.maxTouchPoints > 0
-      );
-    }
-  }, []);
 
   // Auto-start ambient music on load & satisfy browser autoplay policies on first interaction
   useEffect(() => {
@@ -108,17 +94,8 @@ export default function HUD({
     setIsMusicPlaying(playing);
   };
 
-  const currentMode = mode || viewMode || 'orbit';
-  const isDark = true;
-  const isWalkMode = currentMode === 'walk';
-
-  const targetId = focusTarget || focusedArtwork;
-  const activeFocusArtwork = typeof targetId === 'object' ? targetId : artworks.find(a => a.id === targetId);
-
-  // Force dark theme class on html element
-  useEffect(() => {
-    document.documentElement.classList.add('dark');
-  }, []);
+  const isWalkMode = mode === 'walk';
+  const activeFocusArtwork = artworks.find((a) => a.id === focusTarget);
 
   // First time entering walk mode shows quick tutorial popup
   useEffect(() => {
@@ -183,6 +160,20 @@ export default function HUD({
           >
             {isWalkMode ? <Orbit className="w-5 h-5 text-[#D4AF37]" /> : <Footprints className="w-5 h-5 text-[#D4AF37]" />}
           </button>
+
+          {/* Rendering quality: Auto follows the GPU detector; a pinned tier sticks */}
+          {quality && (
+            <button
+              onClick={onCycleQuality}
+              className="px-3 h-10 rounded-none bg-[#111111]/90 backdrop-blur-md border border-[#D4AF37]/30 text-[#FAFAFA] hover:text-[#D4AF37] hover:border-[#D4AF37] flex items-center gap-1.5 transition-all active:scale-95 shadow-md"
+              title="Rendering quality — click to cycle Auto → Low → Medium → High"
+            >
+              <Gauge className="w-4 h-4 text-[#D4AF37]" />
+              <span className="hidden sm:inline text-[9px] font-mono uppercase tracking-luxury-wide">
+                {qualityPreference === 'auto' ? `Auto · ${quality.label}` : quality.label}
+              </span>
+            </button>
+          )}
 
           {/* Standalone Audio Button & Popover Menu */}
           <div className="relative">
@@ -336,7 +327,7 @@ export default function HUD({
                       }`}
                     >
                       <img 
-                        src={art.imageUrl} 
+                        src={art.imageUrlSm || art.imageUrl} 
                         alt={art.title} 
                         className="w-10 h-10 object-cover rounded-none border border-white/10"
                       />

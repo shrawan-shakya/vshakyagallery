@@ -13,7 +13,7 @@ class GalleryAmbientMusic {
     this.audio = new Audio();
     this.audio.loop = true;
     this.audio.volume = 0;
-    this.audio.src = '/audio/gallery-ambient.wav';
+    this.audio.src = '/audio/gallery-ambient.mp3';
   }
 
   start() {

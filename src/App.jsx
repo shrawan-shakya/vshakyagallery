@@ -1,9 +1,38 @@
-import React, { useState, useEffect, Suspense, useRef, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, Suspense, useRef, useMemo, useCallback, lazy } from 'react';
 import { Canvas, useThree } from '@react-three/fiber';
-import { Environment, useProgress, PerformanceMonitor, Stats } from '@react-three/drei';
+import { Environment, useProgress, PerformanceMonitor, Preload, Stats } from '@react-three/drei';
 import { EffectComposer, Bloom, Vignette } from '@react-three/postprocessing';
 import * as THREE from 'three';
 import { fetchArtworksAPI, fetchRoomsAPI, fetchArtistsAPI, fallbackArtworks } from './data/artworks';
+
+// 3D Components
+import GalleryRoom from './components/3d/GalleryRoom';
+import ArtworkFrame from './components/3d/ArtworkFrame';
+import GalleryCamera from './components/3d/GalleryCamera';
+import WalkControls from './components/3d/WalkControls';
+import Lights from './components/3d/Lights';
+import RoomPortal from './components/3d/RoomPortal';
+import MuseumBench from './components/3d/MuseumBench';
+import NearestPictureLights from './components/3d/NearestPictureLights';
+import { getColliders } from './utils/hallLayouts';
+import {
+  QUALITY_TIERS,
+  detectQualityTier,
+  lowerTier,
+  nextQualityPreference,
+  readQualityPreference,
+  writeQualityPreference,
+} from './utils/quality';
+
+// UI Components
+import HUD from './components/ui/HUD';
+import VirtualJoystick from './components/ui/VirtualJoystick';
+import ArtworkModal from './components/ui/ArtworkModal';
+import HoverHint from './components/ui/HoverHint';
+import RoomSidebar from './components/ui/RoomSidebar';
+
+// Curator-only panel: its chunk is only fetched the first time it is opened
+const AdminModal = lazy(() => import('./components/ui/AdminModal'));
 
 // Fullscreen Luxury Gallery Splash / Loading Screen Overlay
 function FullscreenGalleryLoader() {
@@ -84,41 +113,36 @@ function FullscreenGalleryLoader() {
 
 // The gallery is fully static from the lights' point of view, so the shadow
 // map only needs to render once (and after scene swaps) instead of every frame.
-function StaticShadows({ refreshKey }) {
+function StaticShadows({ refreshKey, shadowsEnabled }) {
   const gl = useThree((s) => s.gl);
+  const scene = useThree((s) => s.scene);
+
+  // Toggling the shadow map changes every lit material's shader, and three
+  // only recompiles on material.needsUpdate — so flag them all when it flips
+  useEffect(() => {
+    scene.traverse((o) => {
+      if (!o.material) return;
+      [].concat(o.material).forEach((m) => {
+        m.needsUpdate = true;
+      });
+    });
+  }, [scene, shadowsEnabled]);
+
   useEffect(() => {
     gl.shadowMap.autoUpdate = false;
     gl.shadowMap.needsUpdate = true;
     return () => {
       gl.shadowMap.autoUpdate = true;
     };
-  }, [gl, refreshKey]);
+  }, [gl, refreshKey, shadowsEnabled]);
   return null;
 }
-
-// 3D Components
-import GalleryRoom from './components/3d/GalleryRoom';
-import ArtworkFrame from './components/3d/ArtworkFrame';
-import GalleryCamera from './components/3d/GalleryCamera';
-import WalkControls from './components/3d/WalkControls';
-import Lights from './components/3d/Lights';
-import RoomPortal from './components/3d/RoomPortal';
-import MuseumBench from './components/3d/MuseumBench';
-import NearestPictureLights from './components/3d/NearestPictureLights';
-import { getColliders } from './utils/hallLayouts';
-
-// UI Components
-import HUD from './components/ui/HUD';
-import VirtualJoystick from './components/ui/VirtualJoystick';
-import ArtworkModal from './components/ui/ArtworkModal';
-import HoverHint from './components/ui/HoverHint';
-import AdminModal from './components/ui/AdminModal';
-import RoomSidebar from './components/ui/RoomSidebar';
 
 // Stable prop identities so memoized 3D subtrees skip reconciliation
 const BENCH_POSITION = [0, 0, -4.0];
 const BOARD_POSITION = [2.4, 0, 9.15];
 const BOARD_ROTATION = [0, Math.PI + 0.22, 0];
+const SHADOW_CONFIG = { type: THREE.PCFShadowMap };
 
 // Specialized Error Boundary around post-processing effects.
 // If shaders or context attributes fail, unmount effects without crashing the 3D gallery.
@@ -242,14 +266,13 @@ export default function App() {
   const [artistsList, setArtistsList] = useState([]);
   const [currentRoomId, setCurrentRoomId] = useState('room-main');
   const [isAdminOpen, setIsAdminOpen] = useState(false);
+  const [adminMounted, setAdminMounted] = useState(false); // fetch the admin chunk on first open
   const [isRoomSidebarOpen, setIsRoomSidebarOpen] = useState(false);
 
   const [selectedArtwork, setSelectedArtwork] = useState(null);
-  const theme = 'dark';
   const [mode, setMode] = useState('walk'); // 'walk' | 'orbit'
   const [isSeated, setIsSeated] = useState(false);
   const [isLocked, setIsLocked] = useState(false);
-  const [hasWalkedOnce, setHasWalkedOnce] = useState(false);
   const [lockFailed, setLockFailed] = useState(false);
   const [focusTarget, setFocusTarget] = useState(null);
   const [resetSignal, setResetSignal] = useState(0);
@@ -267,13 +290,33 @@ export default function App() {
     [],
   );
 
-  // Adaptive resolution: start conservative at 1.0 and let PerformanceMonitor
-  // raise it to the display DPR once the GPU proves it has headroom.
-  const maxDpr = useMemo(
-    () => Math.min(typeof window !== 'undefined' ? window.devicePixelRatio || 1 : 1, 1.5),
-    [],
-  );
-  const [dpr, setDpr] = useState(1);
+  // Rendering quality: the visitor's preference (auto, or a pinned tier) plus
+  // the auto-detected tier, which PerformanceMonitor may demote. Resolution
+  // floats inside the tier's DPR range, never above the display's own ratio.
+  const [qualityPref, setQualityPref] = useState(readQualityPreference);
+  const [autoTier, setAutoTier] = useState(detectQualityTier);
+  const quality = QUALITY_TIERS[qualityPref === 'auto' ? autoTier : qualityPref];
+  const displayDpr = typeof window !== 'undefined' ? window.devicePixelRatio || 1 : 1;
+  const [dprRaw, setDprRaw] = useState(quality.dpr[0]);
+  const dprMin = quality.dpr[0];
+  const dprMax = Math.min(quality.dpr[1], Math.max(displayDpr, dprMin));
+  const dpr = THREE.MathUtils.clamp(dprRaw, dprMin, dprMax);
+
+  const handleCycleQuality = useCallback(() => {
+    const next = nextQualityPreference(qualityPref);
+    writeQualityPreference(next);
+    setQualityPref(next);
+  }, [qualityPref]);
+
+  // Frame-rate feedback: shave resolution first, then step the auto tier down
+  const demoteAutoTier = useCallback(() => {
+    if (qualityPref === 'auto') setAutoTier((t) => lowerTier(t));
+  }, [qualityPref]);
+  const handlePerfDecline = useCallback(() => {
+    if (dpr > dprMin + 0.01) setDprRaw(Math.max(dprMin, dpr - 0.2));
+    else demoteAutoTier();
+  }, [dpr, dprMin, demoteAutoTier]);
+  const handlePerfIncline = useCallback(() => setDprRaw(dprMax), [dprMax]);
   const showStats = useMemo(
     () => typeof window !== 'undefined' && new URLSearchParams(window.location.search).has('stats'),
     [],
@@ -281,12 +324,21 @@ export default function App() {
 
   const isWalkMode = mode === 'walk';
 
+  // If the chosen exhibition was deleted (or never existed), show the first one
+  const activeRoomId = useMemo(
+    () =>
+      roomsList.length === 0 || roomsList.some((r) => r.id === currentRoomId)
+        ? currentRoomId
+        : roomsList[0].id,
+    [roomsList, currentRoomId],
+  );
+  const currentRoom = useMemo(() => roomsList.find((r) => r.id === activeRoomId), [roomsList, activeRoomId]);
+
   // Load rooms and artists metadata
   const loadMetadata = useCallback(async () => {
-    const r = await fetchRoomsAPI();
-    setRoomsList(r);
-    const a = await fetchArtistsAPI();
-    setArtistsList(a);
+    const [rooms, artists] = await Promise.all([fetchRoomsAPI(), fetchArtistsAPI()]);
+    setRoomsList(rooms);
+    setArtistsList(artists);
   }, []);
 
   // Load artworks for active room
@@ -300,20 +352,13 @@ export default function App() {
   }, [loadMetadata]);
 
   useEffect(() => {
-    loadRoomArtworks(currentRoomId);
-  }, [currentRoomId, loadRoomArtworks]);
-
-  // If the active exhibition is deleted (or missing), fall back to another room
-  useEffect(() => {
-    if (roomsList.length > 0 && !roomsList.some((r) => r.id === currentRoomId)) {
-      setCurrentRoomId(roomsList[0].id);
-    }
-  }, [roomsList, currentRoomId]);
+    loadRoomArtworks(activeRoomId);
+  }, [activeRoomId, loadRoomArtworks]);
 
   const refreshAllData = useCallback(() => {
     loadMetadata();
-    loadRoomArtworks(currentRoomId);
-  }, [loadMetadata, loadRoomArtworks, currentRoomId]);
+    loadRoomArtworks(activeRoomId);
+  }, [loadMetadata, loadRoomArtworks, activeRoomId]);
 
   // Find currently selected artwork object
   const currentArtwork = artworksList.find((art) => art.id === selectedArtwork);
@@ -343,20 +388,17 @@ export default function App() {
     setIsSeated(false);
   }, []);
 
-  const handleLockChange = useCallback((locked) => {
-    setIsLocked(locked);
-    if (locked) setHasWalkedOnce(true);
-  }, []);
-
-  const handleLockError = useCallback(() => {
-    setLockFailed(true);
-    setHasWalkedOnce(true);
-  }, []);
-
+  const handleLockChange = useCallback((locked) => setIsLocked(locked), []);
+  const handleLockError = useCallback(() => setLockFailed(true), []);
   const handleFocusChange = useCallback((id) => setFocusTarget(id), []);
 
   // Board click / aim-E opens the wing picker; travel happens only on pick
   const handleOpenWingPicker = useCallback(() => setIsRoomSidebarOpen(true), []);
+
+  const handleOpenAdmin = useCallback(() => {
+    setAdminMounted(true);
+    setIsAdminOpen(true);
+  }, []);
 
   useEffect(() => {
     const handleKeyDown = (e) => {
@@ -408,22 +450,16 @@ export default function App() {
   // Find next room for 3D portal
   const nextRoom = useMemo(() => {
     if (roomsList.length <= 1) return null;
-    const currentIndex = roomsList.findIndex((r) => r.id === currentRoomId);
+    const currentIndex = roomsList.findIndex((r) => r.id === activeRoomId);
     const nextIndex = (currentIndex + 1) % roomsList.length;
     return roomsList[nextIndex];
-  }, [roomsList, currentRoomId]);
+  }, [roomsList, activeRoomId]);
 
   // Per-room wall finish chosen at creation time (defaults to matte white)
-  const currentWallColor = useMemo(
-    () => roomsList.find((r) => r.id === currentRoomId)?.wall_color || '#ffffff',
-    [roomsList, currentRoomId]
-  );
+  const currentWallColor = currentRoom?.wall_color || '#ffffff';
 
   // Hall architecture preset for the active room (walls, partitions, lighting)
-  const currentHallLayout = useMemo(
-    () => roomsList.find((r) => r.id === currentRoomId)?.hall_layout || 'classic',
-    [roomsList, currentRoomId]
-  );
+  const currentHallLayout = currentRoom?.hall_layout || 'classic';
 
   // Player-collision footprints for the active hall's internal architecture,
   // padded by the player radius once so WalkControls only iterates raw boxes
@@ -438,6 +474,10 @@ export default function App() {
     [currentHallLayout]
   );
 
+  // Only the hall architecture and the wing board cast shadows (frames never
+  // do), so those are the only changes that need the shadow map re-rendered
+  const shadowRefreshKey = `${currentHallLayout}-${nextRoom ? 'board' : 'no-board'}`;
+
   return (
     <main className="relative w-screen h-screen bg-[#060608] overflow-hidden select-none" style={{ width: '100vw', height: '100vh' }}>
       
@@ -447,7 +487,7 @@ export default function App() {
       {/* 3D R3F Viewport Canvas */}
       <ErrorBoundary>
         <Canvas
-          shadows={{ type: THREE.PCFShadowMap }}
+          shadows={quality.shadows ? SHADOW_CONFIG : false}
           flat
           dpr={dpr}
           gl={{
@@ -455,42 +495,37 @@ export default function App() {
             // EffectComposer owns anti-aliasing (multisampling); canvas MSAA is wasted bandwidth
             antialias: false,
             toneMapping: THREE.ACESFilmicToneMapping,
-            toneMappingExposure: theme === 'dark' ? 1.0 : 1.15
+            toneMappingExposure: 1.0
           }}
           camera={{ position: [0, 2.3, 7.5], fov: 60, near: 0.1, far: 50 }}
           className="w-full h-full cursor-grab active:cursor-grabbing"
           style={{ width: '100vw', height: '100vh', display: 'block' }}
         >
           <Suspense fallback={null}>
-            <StaticShadows refreshKey={`${theme}-${currentRoomId}-${artworksList.length}-${currentHallLayout}`} />
+            <StaticShadows refreshKey={shadowRefreshKey} shadowsEnabled={quality.shadows} />
             {showStats && <Stats />}
             <PerformanceMonitor
               bounds={() => [45, 60]}
               flipflops={4}
-              onFallback={() => setDpr(1)}
-              onDecline={() => setDpr((d) => Math.max(1, d - 0.25))}
-              onIncline={() => setDpr(maxDpr)}
+              onFallback={demoteAutoTier}
+              onDecline={handlePerfDecline}
+              onIncline={handlePerfIncline}
             />
             <Suspense fallback={null}>
-              <Environment files="/hdri/gallery_studio.hdr" environmentIntensity={theme === 'dark' ? 0.22 : 0.5} />
+              <Environment files="/hdri/gallery_studio.hdr" environmentIntensity={0.22} />
             </Suspense>
 
             {/* Gallery Lighting Environment */}
-            <Lights theme={theme} />
+            <Lights />
 
             {/* Fixed pool of real spotlights that follow the nearest artworks */}
-            <NearestPictureLights artworks={artworksList} theme={theme} />
+            <NearestPictureLights artworks={artworksList} slotCount={quality.spotSlots} />
 
             {/* Architectural Geometry — hall layout drives partitions/islands/lighting */}
-            <GalleryRoom theme={theme} wallColor={currentWallColor} hallLayout={currentHallLayout} />
+            <GalleryRoom wallColor={currentWallColor} hallLayout={currentHallLayout} quality={quality} />
 
             {/* Central Museum Leather Bench */}
-            <MuseumBench
-              position={BENCH_POSITION}
-              theme={theme}
-              isSeated={isSeated}
-              onSitBench={handleSitBench}
-            />
+            <MuseumBench position={BENCH_POSITION} onSitBench={handleSitBench} />
 
             {/* Sandwich board by the entrance -> opens the wing-choice sidebar */}
             {nextRoom && (
@@ -507,12 +542,10 @@ export default function App() {
               <ArtworkFrame
                 key={art.id}
                 artwork={art}
-                isSelected={selectedArtwork === art.id}
-                aimFocused={isWalkMode && focusTarget === art.id}
-                theme={theme}
                 interactive={!isWalkMode}
                 onSelect={handleSelectArtwork}
                 onHoverChange={setArtworkHovered}
+                quality={quality}
               />
             ))}
 
@@ -547,14 +580,21 @@ export default function App() {
 
             {/* Cinematic Post-Processing Effects with Safe Fallback */}
             <SafeEffectComposer multisampling={1}>
-              <Bloom
-                mipmapBlur
-                luminanceThreshold={theme === 'dark' ? 1.0 : 1.2}
-                luminanceSmoothing={0.25}
-                intensity={theme === 'dark' ? 0.2 : 0.1}
-              />
-              <Vignette offset={0.22} darkness={theme === 'dark' ? 0.35 : 0.22} />
+              {quality.bloom && (
+                <Bloom
+                  mipmapBlur
+                  levels={quality.bloomLevels}
+                  luminanceThreshold={1.0}
+                  luminanceSmoothing={0.25}
+                  intensity={0.2}
+                />
+              )}
+              <Vignette offset={0.22} darkness={0.35} />
             </SafeEffectComposer>
+
+            {/* Compile every shader and upload every texture while the splash
+                screen is still up, instead of hitching on first sight */}
+            <Preload all />
           </Suspense>
         </Canvas>
       </ErrorBoundary>
@@ -584,21 +624,22 @@ export default function App() {
         selectedArtwork={selectedArtwork}
         isSeated={isSeated}
         onStandUp={handleStandUp}
-        theme={theme}
         mode={mode}
         isLocked={isLocked}
-        hasWalkedOnce={hasWalkedOnce}
         lockFailed={lockFailed}
         focusTarget={focusTarget}
         lockRequestRef={lockRequestRef}
         isTouchDevice={isTouchDevice}
         rooms={roomsList}
-        currentRoomId={currentRoomId}
+        currentRoomId={activeRoomId}
         onSelectRoom={handleSelectRoom}
-        onOpenAdmin={() => setIsAdminOpen(true)}
+        onOpenAdmin={handleOpenAdmin}
         onToggleMode={handleToggleMode}
         onSelectArtwork={handleSelectArtwork}
         onResetView={handleResetView}
+        quality={quality}
+        qualityPreference={qualityPref}
+        onCycleQuality={handleCycleQuality}
       />
 
       {/* Touch joystick (walk mode only) */}
@@ -623,7 +664,7 @@ export default function App() {
       <RoomSidebar
         isOpen={isRoomSidebarOpen}
         rooms={roomsList}
-        currentRoomId={currentRoomId}
+        currentRoomId={activeRoomId}
         onSelectRoom={(roomId) => {
           setIsRoomSidebarOpen(false);
           handleSelectRoom(roomId);
@@ -631,15 +672,20 @@ export default function App() {
         onClose={() => setIsRoomSidebarOpen(false)}
       />
 
-      {/* Curator Admin Panel Modal */}
-      <AdminModal
-        isOpen={isAdminOpen}
-        onClose={() => setIsAdminOpen(false)}
-        rooms={roomsList}
-        artists={artistsList}
-        artworks={artworksList}
-        onRefreshData={refreshAllData}
-      />
+      {/* Curator Admin Panel Modal — stays mounted after first open so a
+          half-filled form survives closing the panel */}
+      {adminMounted && (
+        <Suspense fallback={null}>
+          <AdminModal
+            isOpen={isAdminOpen}
+            onClose={() => setIsAdminOpen(false)}
+            rooms={roomsList}
+            artists={artistsList}
+            artworks={artworksList}
+            onRefreshData={refreshAllData}
+          />
+        </Suspense>
+      )}
     </main>
   );
 }

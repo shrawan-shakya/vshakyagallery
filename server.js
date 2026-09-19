@@ -7,8 +7,10 @@ import fs from 'fs';
 import crypto from 'crypto';
 import rateLimit from 'express-rate-limit';
 import { fileURLToPath } from 'url';
-import sizeOf from 'image-size';
+import sharp from 'sharp';
 import { put } from '@vercel/blob';
+import { IN } from './src/constants.js';
+import { seedArtworks } from './src/data/artworks.js';
 import {
   HALL_LAYOUT_IDS,
   DEFAULT_HALL_LAYOUT,
@@ -26,32 +28,12 @@ try {
   /* process.loadEnvFile not available or .env missing */
 }
 
-// Fallback manual parser to ensure .env is read cleanly regardless of Node version or quotes
-try {
-  const envPath = path.join(__dirname, '.env');
-  if (fs.existsSync(envPath)) {
-    const rawContent = fs.readFileSync(envPath, 'utf8');
-    for (const line of rawContent.split(/\r?\n/)) {
-      const trimmed = line.trim();
-      if (!trimmed || trimmed.startsWith('#')) continue;
-      const eqIdx = trimmed.indexOf('=');
-      if (eqIdx > 0) {
-        const key = trimmed.slice(0, eqIdx).trim();
-        let val = trimmed.slice(eqIdx + 1).trim();
-        if ((val.startsWith('"') && val.endsWith('"')) || (val.startsWith("'") && val.endsWith("'"))) {
-          val = val.slice(1, -1).trim();
-        }
-        process.env[key] = val;
-      }
-    }
-  }
-} catch { /* ignore */ }
 
 // ---------------- ADMIN AUTHENTICATION ----------------
 // Single shared admin password. Set ADMIN_PASSWORD in .env for production;
 // otherwise a random password is generated and printed once at boot.
 const TOKEN_TTL_MS = 12 * 60 * 60 * 1000; // 12 hours
-let getAdminPassword = () => (process.env.ADMIN_PASSWORD || '').trim();
+const getAdminPassword = () => (process.env.ADMIN_PASSWORD || '').trim();
 if (!getAdminPassword()) {
   const fallback = crypto.randomBytes(18).toString('base64url');
   process.env.ADMIN_PASSWORD = fallback;
@@ -138,6 +120,31 @@ db.pragma('foreign_keys = ON');
 db.pragma('journal_mode = WAL');
 db.pragma('busy_timeout = 5000');
 
+// API shape of an artworks row: camelCase fields plus the metric size and the
+// position / rotation tuples the 3D scene consumes directly
+function toArtworkDTO(row) {
+  return {
+    id: row.id,
+    roomId: row.room_id,
+    artistId: row.artist_id,
+    title: row.title,
+    artist: row.artist,
+    year: row.year,
+    medium: row.medium,
+    description: row.description,
+    audioText: row.audio_text,
+    imageUrl: row.image_url,
+    imageUrlSm: row.image_url_sm,
+    widthIn: row.width_in,
+    heightIn: row.height_in,
+    width: row.width_in * IN,
+    height: row.height_in * IN,
+    wallId: row.wall_id,
+    position: [row.pos_x, row.pos_y, row.pos_z],
+    rotation: [0, row.rot_y, 0],
+  };
+}
+
 // Initialize database tables
 db.exec(`
   CREATE TABLE IF NOT EXISTS artists (
@@ -200,137 +207,29 @@ if (countArtists.count === 0) {
     VALUES (?, ?, ?, ?, ?, ?)
   `).run(defaultRoomId, defaultArtistId, 'Main Permanent Exhibition', 'The primary hall of Shakya Gallery.', 'dark', '#ffffff');
 
-  // Initial Artwork List (converted from static data)
-  const initialArtworks = [
-    {
-      id: "starry-horizon",
-      title: "The Starry Horizon",
-      artist: "Evelyn Vane",
-      year: "2024",
-      medium: "Acrylic on Canvas",
-      description: "An expressive landscape capturing the ethereal boundary where a neon twilight meets a starlit mountain range.",
-      imageUrl: "/artworks/starry-horizon.jpg",
-      widthIn: 48,
-      heightIn: 36,
-      wallId: 'back',
-      posX: -6.75, posY: 1.55, posZ: -9.8, rotY: 0
-    },
-    {
-      id: "echoes-silence",
-      title: "Echoes of Silence",
-      artist: "Marcus Thorne",
-      year: "2023",
-      medium: "Oil on Canvas",
-      description: "A minimalist monochromatic abstract piece representing quiet solitude. The subtle textures on heavy impasto canvas invite close inspection.",
-      imageUrl: "/artworks/echoes-silence.jpg",
-      widthIn: 40,
-      heightIn: 40,
-      wallId: 'back',
-      posX: -2.25, posY: 1.55, posZ: -9.8, rotY: 0
-    },
-    {
-      id: "golden-symphony",
-      title: "Golden Symphony",
-      artist: "Clara Dupont",
-      year: "2025",
-      medium: "Mixed Media & Gold Leaf",
-      description: "A vibrant abstract composition combining gold leaf sheets with warm-toned oils suggesting musical flow.",
-      imageUrl: "/artworks/golden-symphony.jpg",
-      widthIn: 36,
-      heightIn: 48,
-      wallId: 'back',
-      posX: 2.25, posY: 1.55, posZ: -9.8, rotY: 0
-    },
-    {
-      id: "neon-prism",
-      title: "Prism of Neon & Gold",
-      artist: "Lucas Vance",
-      year: "2025",
-      medium: "Oil & Metallic Foil on Canvas",
-      description: "A geometric composition exploring light refraction through crystal structures.",
-      imageUrl: "/artworks/starry-horizon.jpg",
-      widthIn: 48,
-      heightIn: 36,
-      wallId: 'back',
-      posX: 6.75, posY: 1.55, posZ: -9.8, rotY: 0
-    },
-    {
-      id: "solitude",
-      title: "Solitude in Blue",
-      artist: "Elena Rostova",
-      year: "2022",
-      medium: "Watercolor & Ink",
-      description: "A wide-format watercolor depicting a solitary lighthouse shrouded in deep oceanic blue mist.",
-      imageUrl: "/artworks/solitude.jpg",
-      widthIn: 63,
-      heightIn: 36,
-      wallId: 'left',
-      posX: -9.8, posY: 1.55, posZ: -4, rotY: Math.PI / 2
-    },
-    {
-      id: "velocity-light",
-      title: "Velocity of Light",
-      artist: "Kenji Sato",
-      year: "2024",
-      medium: "Digital Painting on Archival Canvas",
-      description: "An energetic abstract painting depicting light rays bending in hyper-speed with neon strokes.",
-      imageUrl: "/artworks/velocity-light.jpg",
-      widthIn: 36,
-      heightIn: 48,
-      wallId: 'left',
-      posX: -9.8, posY: 1.55, posZ: 4, rotY: Math.PI / 2
-    },
-    {
-      id: "crimson-mirage",
-      title: "Crimson Mirage",
-      artist: "Amina Al-Mansoor",
-      year: "2023",
-      medium: "Acrylic on Linen",
-      description: "An evocative representation of desert heatwaves with swirling vermillion and crimson tones.",
-      imageUrl: "/artworks/crimson-mirage.jpg",
-      widthIn: 56,
-      heightIn: 42,
-      wallId: 'right',
-      posX: 9.8, posY: 1.55, posZ: -4, rotY: -Math.PI / 2
-    },
-    {
-      id: "whispering-winds",
-      title: "Whispering Winds",
-      artist: "Oliver Green",
-      year: "2024",
-      medium: "Gouache on Paper",
-      description: "A stylized botanical abstract showcasing large Monstera leaves blowing in the wind.",
-      imageUrl: "/artworks/whispering-winds.jpg",
-      widthIn: 44,
-      heightIn: 44,
-      wallId: 'right',
-      posX: 9.8, posY: 1.55, posZ: 4, rotY: -Math.PI / 2
-    },
-    {
-      id: "monolith-shadow",
-      title: "Monolith Shadow",
-      artist: "Diana Vance",
-      year: "2025",
-      medium: "Oil on Wood Panel",
-      description: "An architectural study of light and geometry with a singular tall dark structure.",
-      imageUrl: "/artworks/monolith-shadow.jpg",
-      widthIn: 36,
-      heightIn: 48,
-      wallId: 'partition_back',
-      posX: 0, posY: 1.55, posZ: 1.8, rotY: Math.PI
-    }
-  ];
-
   const insertArt = db.prepare(`
     INSERT INTO artworks (id, room_id, artist_id, title, artist, year, medium, description, audio_text, image_url, width_in, height_in, wall_id, pos_x, pos_y, pos_z, rot_y)
     VALUES (@id, ?, ?, @title, @artist, @year, @medium, @description, @audioText, @imageUrl, @widthIn, @heightIn, @wallId, @posX, @posY, @posZ, @rotY)
   `);
 
-  for (const art of initialArtworks) {
-    const audioText = `${art.title} by ${art.artist}, ${art.year}. ${art.medium}. ${art.description}`;
+  // The seed catalogue lives in src/data/artworks.js (shared with the client fallback)
+  for (const art of seedArtworks) {
     insertArt.run({
-      ...art,
-      audioText
+      id: art.id,
+      title: art.title,
+      artist: art.artist,
+      year: art.year,
+      medium: art.medium,
+      description: art.description,
+      audioText: `${art.title} by ${art.artist}, ${art.year}. ${art.medium}. ${art.description}`,
+      imageUrl: art.imageUrl,
+      widthIn: art.widthIn,
+      heightIn: art.heightIn,
+      wallId: art.wallId,
+      posX: art.position[0],
+      posY: art.position[1],
+      posZ: art.position[2],
+      rotY: art.rotation[1],
     }, defaultRoomId, defaultArtistId);
   }
 }
@@ -341,7 +240,14 @@ if (countArtists.count === 0) {
 // legacy artwork hanging layouts.
 try {
   db.prepare("ALTER TABLE rooms ADD COLUMN hall_layout TEXT NOT NULL DEFAULT 'classic'").run();
-} catch (e) {
+} catch {
+  // Column already exists
+}
+
+// Small (1024px) WebP variant of each upload for low-end GPUs and thumbnails
+try {
+  db.prepare('ALTER TABLE artworks ADD COLUMN image_url_sm TEXT').run();
+} catch {
   // Column already exists
 }
 
@@ -390,15 +296,16 @@ function slotOnWall(hallId, roomId, requestedWall, db) {
 // Multer Storage Configuration — hardened: 15 MB cap, one file,
 // image MIME whitelist (jpeg/png/webp only)
 const MAX_IMAGE_BYTES = 15 * 1024 * 1024;
-const IMAGE_MIME_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp']);
+// The stored extension comes from the validated MIME type, never from the client's filename
+const IMAGE_EXT_BY_MIME = { 'image/jpeg': '.jpg', 'image/png': '.png', 'image/webp': '.webp' };
+const IMAGE_MIME_TYPES = new Set(Object.keys(IMAGE_EXT_BY_MIME));
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
     cb(null, uploadsDir);
   },
   filename: (req, file, cb) => {
     const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1e9);
-    const ext = path.extname(file.originalname) || '.jpg';
-    cb(null, 'artwork-' + uniqueSuffix + ext);
+    cb(null, 'artwork-' + uniqueSuffix + IMAGE_EXT_BY_MIME[file.mimetype]);
   }
 });
 const upload = multer({
@@ -407,32 +314,64 @@ const upload = multer({
   fileFilter: (req, file, cb) => cb(null, IMAGE_MIME_TYPES.has(file.mimetype)),
 });
 
-// Helper function to upload image file to Vercel Blob (or fallback to local /uploads URL)
-async function uploadImageToBlobOrLocal(file) {
-  if (!file) return null;
-  let imageUrl = `/uploads/${file.filename}`;
+// ---------------- IMAGE PIPELINE ----------------
+// Every upload is re-encoded to WebP at two sizes: the frame texture cap (2048px)
+// and a small variant (1024px) for low-end GPUs, admin thumbnails and the plaque
+// header. The original is discarded once both exist.
+const IMAGE_VARIANTS = [
+  { key: 'imageUrl', suffix: '', maxSide: 2048 },
+  { key: 'imageUrlSm', suffix: '-sm', maxSide: 1024 },
+];
 
+// Persist one processed file: Vercel Blob when configured, else the local /uploads URL
+async function storeImage(localPath, filename, contentType) {
   const token = process.env.BLOB_READ_WRITE_TOKEN;
-  if (token || isVercel) {
-    try {
-      const fileBuffer = fs.readFileSync(file.path);
-      const options = {
-        access: 'public',
-        contentType: file.mimetype || 'image/jpeg',
-      };
-      if (token) options.token = token;
-
-      const blob = await put(file.filename, fileBuffer, options);
-      if (blob && blob.url) {
-        imageUrl = blob.url;
-        try { fs.unlinkSync(file.path); } catch { /* ignore */ }
-      }
-    } catch (blobErr) {
-      console.warn('⚠️ Vercel Blob notice (falling back to local URL):', blobErr.message);
+  if (!token && !isVercel) return `/uploads/${filename}`;
+  try {
+    const options = { access: 'public', contentType };
+    if (token) options.token = token;
+    const blob = await put(filename, fs.readFileSync(localPath), options);
+    if (blob?.url) {
+      try { fs.unlinkSync(localPath); } catch { /* ignore */ }
+      return blob.url;
     }
+  } catch (blobErr) {
+    console.warn('⚠️ Vercel Blob notice (falling back to local URL):', blobErr.message);
   }
+  return `/uploads/${filename}`;
+}
 
-  return imageUrl;
+// Multer's temp file -> { imageUrl, imageUrlSm, width, height }
+async function processUpload(file) {
+  const meta = await sharp(file.path).metadata();
+  const base = path.parse(file.filename).name;
+  const result = { width: meta.width, height: meta.height };
+  for (const variant of IMAGE_VARIANTS) {
+    const filename = `${base}${variant.suffix}.webp`;
+    const outPath = path.join(uploadsDir, filename);
+    await sharp(file.path)
+      .rotate() // honour EXIF orientation
+      .resize({ width: variant.maxSide, height: variant.maxSide, fit: 'inside', withoutEnlargement: true })
+      .webp({ quality: 82 })
+      .toFile(outPath);
+    result[variant.key] = await storeImage(outPath, filename, 'image/webp');
+  }
+  try { fs.unlinkSync(file.path); } catch { /* ignore */ }
+  return result;
+}
+
+// Hanging size when the curator gave none: 40in tall, width from the pixel aspect
+function inchesFromAspect({ width, height }) {
+  if (!width || !height) return { widthIn: 48, heightIn: 36 };
+  return { widthIn: Math.round(40 * (width / height)), heightIn: 40 };
+}
+
+// Delete locally stored variants; blob URLs are left alone
+function removeLocalImages(...urls) {
+  for (const url of urls) {
+    if (!url || !url.startsWith('/uploads/')) continue;
+    try { fs.unlinkSync(path.join(uploadsDir, path.basename(url))); } catch { /* already gone */ }
+  }
 }
 
 // ---------------- RATE LIMITING ----------------
@@ -468,8 +407,12 @@ async function backupDatabase() {
     console.error('Database backup failed:', err.message);
   }
 }
-backupDatabase();
-setInterval(backupDatabase, 6 * 60 * 60 * 1000).unref(); // every 6 hours
+// Vercel's function bundle is read-only and its instances are short-lived,
+// so rolling backups only make sense on a long-running host
+if (!isVercel) {
+  backupDatabase();
+  setInterval(backupDatabase, 6 * 60 * 60 * 1000).unref(); // every 6 hours
+}
 
 // ---------------- REST API ROUTES ----------------
 
@@ -653,15 +596,8 @@ app.delete('/api/rooms/:id', writeLimiter, requireAdmin, (req, res) => {
     }
 
     // Remove uploaded image files belonging to this room's artworks
-    const arts = db.prepare('SELECT image_url FROM artworks WHERE room_id = ?').all(id);
-    for (const art of arts) {
-      if (art.image_url && art.image_url.startsWith('/uploads/')) {
-        const filePath = path.join(__dirname, 'public', art.image_url);
-        if (fs.existsSync(filePath)) {
-          try { fs.unlinkSync(filePath); } catch (e) { /* ignore */ }
-        }
-      }
-    }
+    const arts = db.prepare('SELECT image_url, image_url_sm FROM artworks WHERE room_id = ?').all(id);
+    for (const art of arts) removeLocalImages(art.image_url, art.image_url_sm);
 
     // Artworks cascade via foreign keys
     db.prepare('DELETE FROM rooms WHERE id = ?').run(id);
@@ -684,28 +620,7 @@ app.get('/api/artworks', (req, res) => {
     query += ' ORDER BY created_at ASC';
     const rows = db.prepare(query).all(...params);
 
-    const IN = 0.0254; // imperial inches -> metric meters
-    const artworks = rows.map((art) => ({
-      id: art.id,
-      roomId: art.room_id,
-      artistId: art.artist_id,
-      title: art.title,
-      artist: art.artist,
-      year: art.year,
-      medium: art.medium,
-      description: art.description,
-      audioText: art.audio_text,
-      imageUrl: art.image_url,
-      widthIn: art.width_in,
-      heightIn: art.height_in,
-      width: art.width_in * IN,
-      height: art.height_in * IN,
-      wallId: art.wall_id,
-      position: [art.pos_x, art.pos_y, art.pos_z],
-      rotation: [0, art.rot_y, 0]
-    }));
-
-    res.json(artworks);
+    res.json(rows.map(toArtworkDTO));
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -735,20 +650,14 @@ app.post('/api/artworks/upload', writeLimiter, requireAdmin, upload.single('imag
       return res.status(400).json({ error: 'Title, Artist, and Room are required fields.' });
     }
 
+    // WebP variants + pixel size (processed before anything is written to the DB)
+    const image = await processUpload(req.file);
+
     // Determine dimensions (fallback to image aspect ratio if widthIn/heightIn missing)
     let finalWidthIn = parseFloat(widthIn);
     let finalHeightIn = parseFloat(heightIn);
-
     if (isNaN(finalWidthIn) || isNaN(finalHeightIn) || finalWidthIn <= 0 || finalHeightIn <= 0) {
-      try {
-        const dimensions = sizeOf(req.file.path);
-        const aspect = dimensions.width / dimensions.height;
-        finalHeightIn = 40; // Default height 40 inches
-        finalWidthIn = Math.round(40 * aspect);
-      } catch (e) {
-        finalWidthIn = 48;
-        finalHeightIn = 36;
-      }
+      ({ widthIn: finalWidthIn, heightIn: finalHeightIn } = inchesFromAspect(image));
     }
 
     // Calculate wall position coordinates (use custom values if supplied, otherwise calculate wall slot)
@@ -771,12 +680,11 @@ app.post('/api/artworks/upload', writeLimiter, requireAdmin, upload.single('imag
     }
 
     const id = 'artwork-' + Date.now();
-    const imageUrl = (await uploadImageToBlobOrLocal(req.file)) || `/uploads/${req.file.filename}`;
     const audioText = `${title} by ${artist}${year ? `, ${year}` : ''}. ${medium ? `${medium}. ` : ''}${description || ''}`;
 
     db.prepare(`
-      INSERT INTO artworks (id, room_id, artist_id, title, artist, year, medium, description, audio_text, image_url, width_in, height_in, wall_id, pos_x, pos_y, pos_z, rot_y)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO artworks (id, room_id, artist_id, title, artist, year, medium, description, audio_text, image_url, image_url_sm, width_in, height_in, wall_id, pos_x, pos_y, pos_z, rot_y)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       id,
       roomId,
@@ -787,7 +695,8 @@ app.post('/api/artworks/upload', writeLimiter, requireAdmin, upload.single('imag
       medium || 'Mixed Media',
       description || '',
       audioText,
-      imageUrl,
+      image.imageUrl,
+      image.imageUrlSm,
       finalWidthIn,
       finalHeightIn,
       wall,
@@ -798,21 +707,7 @@ app.post('/api/artworks/upload', writeLimiter, requireAdmin, upload.single('imag
     );
 
     const newArt = db.prepare('SELECT * FROM artworks WHERE id = ?').get(id);
-    const IN = 0.0254;
-    res.status(201).json({
-      ...newArt,
-      roomId: newArt.room_id,
-      artistId: newArt.artist_id,
-      audioText: newArt.audio_text,
-      imageUrl: newArt.image_url,
-      widthIn: newArt.width_in,
-      heightIn: newArt.height_in,
-      width: newArt.width_in * IN,
-      height: newArt.height_in * IN,
-      wallId: newArt.wall_id,
-      position: [newArt.pos_x, newArt.pos_y, newArt.pos_z],
-      rotation: [0, newArt.rot_y, 0]
-    });
+    res.status(201).json(toArtworkDTO(newArt));
   } catch (err) {
     console.error("Upload error:", err);
     res.status(500).json({ error: err.message });
@@ -851,27 +746,18 @@ app.put('/api/artworks/:id', writeLimiter, requireAdmin, upload.single('image'),
     let finalHeightIn = parseFloat(heightIn) || (existing ? existing.height_in : 36);
 
     let imageUrl = existing ? existing.image_url : '/artworks/starry-horizon.jpg';
+    let imageUrlSm = existing ? existing.image_url_sm : null;
 
-    // If new image file is uploaded, update imageUrl and delete old file if in /uploads/
+    // A replacement image: re-encode it, then drop the previous local files
     if (req.file) {
-      if (existing && existing.image_url && existing.image_url.startsWith('/uploads/')) {
-        const oldPath = path.join(__dirname, 'public', existing.image_url);
-        if (fs.existsSync(oldPath)) {
-          try { fs.unlinkSync(oldPath); } catch (e) { /* ignore */ }
-        }
-      }
-      imageUrl = (await uploadImageToBlobOrLocal(req.file)) || `/uploads/${req.file.filename}`;
+      const image = await processUpload(req.file);
+      if (existing) removeLocalImages(existing.image_url, existing.image_url_sm);
+      imageUrl = image.imageUrl;
+      imageUrlSm = image.imageUrlSm;
 
-      // Recalculate dimensions from new image aspect ratio if width/height not explicitly supplied
+      // Recalculate dimensions from the new aspect ratio if width/height not explicitly supplied
       if (isNaN(parseFloat(widthIn)) || isNaN(parseFloat(heightIn))) {
-        try {
-          const dimensions = sizeOf(req.file.path);
-          const aspect = dimensions.width / dimensions.height;
-          finalHeightIn = 40;
-          finalWidthIn = Math.round(40 * aspect);
-        } catch (e) {
-          /* keep previous */
-        }
+        ({ widthIn: finalWidthIn, heightIn: finalHeightIn } = inchesFromAspect(image));
       }
     }
 
@@ -897,37 +783,23 @@ app.put('/api/artworks/:id', writeLimiter, requireAdmin, upload.single('image'),
 
     if (!existing) {
       db.prepare(`
-        INSERT INTO artworks (id, room_id, artist_id, title, artist, year, medium, description, audio_text, image_url, width_in, height_in, wall_id, pos_x, pos_y, pos_z, rot_y)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO artworks (id, room_id, artist_id, title, artist, year, medium, description, audio_text, image_url, image_url_sm, width_in, height_in, wall_id, pos_x, pos_y, pos_z, rot_y)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `).run(
-        id, newRoomId, newArtistId, newTitle, newArtist, newYear, newMedium, newDesc, audioText, imageUrl, finalWidthIn, finalHeightIn, newWallId, posX, posY, posZ, rotY
+        id, newRoomId, newArtistId, newTitle, newArtist, newYear, newMedium, newDesc, audioText, imageUrl, imageUrlSm, finalWidthIn, finalHeightIn, newWallId, posX, posY, posZ, rotY
       );
     } else {
       db.prepare(`
         UPDATE artworks 
-        SET room_id = ?, artist_id = ?, title = ?, artist = ?, year = ?, medium = ?, description = ?, audio_text = ?, image_url = ?, width_in = ?, height_in = ?, wall_id = ?, pos_x = ?, pos_y = ?, pos_z = ?, rot_y = ?
+        SET room_id = ?, artist_id = ?, title = ?, artist = ?, year = ?, medium = ?, description = ?, audio_text = ?, image_url = ?, image_url_sm = ?, width_in = ?, height_in = ?, wall_id = ?, pos_x = ?, pos_y = ?, pos_z = ?, rot_y = ?
         WHERE id = ?
       `).run(
-        newRoomId, newArtistId, newTitle, newArtist, newYear, newMedium, newDesc, audioText, imageUrl, finalWidthIn, finalHeightIn, newWallId, posX, posY, posZ, rotY, id
+        newRoomId, newArtistId, newTitle, newArtist, newYear, newMedium, newDesc, audioText, imageUrl, imageUrlSm, finalWidthIn, finalHeightIn, newWallId, posX, posY, posZ, rotY, id
       );
     }
 
     const updated = db.prepare('SELECT * FROM artworks WHERE id = ?').get(id);
-    const IN = 0.0254;
-    res.json({
-      ...updated,
-      roomId: updated.room_id,
-      artistId: updated.artist_id,
-      audioText: updated.audio_text,
-      imageUrl: updated.image_url,
-      widthIn: updated.width_in,
-      heightIn: updated.height_in,
-      width: updated.width_in * IN,
-      height: updated.height_in * IN,
-      wallId: updated.wall_id,
-      position: [updated.pos_x, updated.pos_y, updated.pos_z],
-      rotation: [0, updated.rot_y, 0]
-    });
+    res.json(toArtworkDTO(updated));
   } catch (err) {
     console.error("Update error:", err);
     res.status(500).json({ error: err.message });
@@ -941,13 +813,7 @@ app.delete('/api/artworks/:id', writeLimiter, requireAdmin, (req, res) => {
     const art = db.prepare('SELECT * FROM artworks WHERE id = ?').get(id);
     if (!art) return res.status(404).json({ error: 'Artwork not found' });
 
-    // Delete image file if it is in /uploads/
-    if (art.image_url && art.image_url.startsWith('/uploads/')) {
-      const filePath = path.join(__dirname, 'public', art.image_url);
-      if (fs.existsSync(filePath)) {
-        try { fs.unlinkSync(filePath); } catch (e) { /* ignore */ }
-      }
-    }
+    removeLocalImages(art.image_url, art.image_url_sm);
 
     db.prepare('DELETE FROM artworks WHERE id = ?').run(id);
     res.json({ success: true, id });
