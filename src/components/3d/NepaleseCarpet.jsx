@@ -628,6 +628,22 @@ function createWoolKnotBumpTexture() {
   return texture;
 }
 
+// One texture per variant, shared by every carpet that uses it — the 40k-fill
+// canvas generator above is the most expensive thing in the room to build
+const carpetTextureCache = new Map();
+function getCarpetTexture(variant) {
+  if (!carpetTextureCache.has(variant)) {
+    carpetTextureCache.set(variant, createProceduralNepaleseCarpetTexture(variant));
+  }
+  return carpetTextureCache.get(variant);
+}
+
+let woolKnotBumpTexture = null;
+function getWoolKnotBumpTexture() {
+  woolKnotBumpTexture ??= createWoolKnotBumpTexture();
+  return woolKnotBumpTexture;
+}
+
 /**
  * Ultra-Performance Instanced White/Off-White Wool Fringes Component.
  * Reduces 2,000 WebGL draw calls down to 2 draw calls per carpet!
@@ -753,11 +769,9 @@ function NepaleseCarpet({
 }) {
   const [width, depth] = size;
 
-  // 1. Generate master procedural Nepalese carpet vector canvas texture
-  const carpetMap = useMemo(() => createProceduralNepaleseCarpetTexture(variant), [variant]);
-
-  // 2. Generate micro-knot wool bump texture
-  const knotBumpMap = useMemo(() => createWoolKnotBumpTexture(), []);
+  // Textures are shared per variant across every carpet in the room
+  const carpetMap = getCarpetTexture(variant);
+  const knotBumpMap = getWoolKnotBumpTexture();
 
   const halfW = width / 2;
   const halfD = depth / 2;

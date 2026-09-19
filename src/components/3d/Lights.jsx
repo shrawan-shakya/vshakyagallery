@@ -1,28 +1,19 @@
 import React, { memo } from 'react';
 
-function Lights({ theme }) {
-  const isDark = theme === 'dark';
-
+function Lights() {
   return (
     <>
-      {/* 1. Overall ambient light for a bright, airy hall */}
-      <ambientLight 
-        intensity={isDark ? 0.18 : 0.48} 
-        color={isDark ? "#141422" : "#ffffff"} 
-      />
+      {/* 1. Overall ambient fill */}
+      <ambientLight intensity={0.18} color="#141422" />
 
-      {/* 2. Hemisphere light for natural vertical gradient color bounce (sky to floor) */}
-      <hemisphereLight
-        skyColor={isDark ? "#3a3a4c" : "#ffffff"}
-        groundColor={isDark ? "#1a1a24" : "#fdf3e3"}
-        intensity={isDark ? 0.28 : 0.65}
-      />
+      {/* 2. Hemisphere light for a natural vertical gradient (sky to floor) */}
+      <hemisphereLight skyColor="#3a3a4c" groundColor="#1a1a24" intensity={0.28} />
 
-      {/* 3. Key directional light representing sun/ceiling keylight casting soft shadows */}
-<directionalLight
+      {/* 3. Key light from the ceiling casting the single static shadow map */}
+      <directionalLight
         position={[6, 9, 6]}
-        intensity={isDark ? 0.38 : 1.25}
-        color={isDark ? "#ffe0c0" : "#fffbf5"}
+        intensity={0.38}
+        color="#ffe0c0"
         castShadow
         shadow-mapSize-width={512}
         shadow-mapSize-height={512}
@@ -38,17 +29,10 @@ function Lights({ theme }) {
         shadow-camera-far={45}
       />
 
-      {/* 4. Subtle cool fill light in dark mode for ambient depth */}
-      {isDark && (
-        <directionalLight
-          position={[-8, 4, -8]}
-          intensity={0.22}
-          color="#424266"
-        />
-      )}
+      {/* 4. Subtle cool fill for ambient depth */}
+      <directionalLight position={[-8, 4, -8]} intensity={0.22} color="#424266" />
     </>
   );
 }
 
 export default memo(Lights);
-

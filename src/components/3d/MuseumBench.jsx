@@ -1,47 +1,34 @@
 import React, { useState, memo } from 'react';
-import * as THREE from 'three';
+import { useCursor } from '@react-three/drei';
+import AimTargets from './AimTargets';
 
-function MuseumBench({
-  position = [0, 0, 1.5], 
-  theme = 'dark',
-  isSeated = false,
-  onSitBench 
-}) {
+const CUSHION_COLOR = '#1a1a1e';
+const BASE_COLOR = '#111111';
+const GOLD_ACCENT = '#D4AF37';
+
+function MuseumBench({ position = [0, 0, 1.5], onSitBench }) {
   const [hovered, setHovered] = useState(false);
-  const isDark = theme === 'dark';
-
-  const cushionColor = isDark ? '#1a1a1e' : '#e8e2d5';
-  const baseColor = '#111111';
-  const goldAccent = '#D4AF37';
+  useCursor(hovered);
 
   return (
-    <group 
-      position={position} 
+    <AimTargets
+      position={position}
       userData={{ isBench: true }}
-      onPointerOver={(e) => { 
-        e.stopPropagation(); 
-        setHovered(true); 
-        document.body.style.cursor = 'pointer';
+      onPointerOver={(e) => {
+        e.stopPropagation();
+        setHovered(true);
       }}
-      onPointerOut={() => { 
-        setHovered(false); 
-        document.body.style.cursor = 'auto';
-      }}
-      onClick={(e) => { 
-        e.stopPropagation(); 
-        document.body.style.cursor = 'auto';
-        onSitBench?.(); 
+      onPointerOut={() => setHovered(false)}
+      onClick={(e) => {
+        e.stopPropagation();
+        setHovered(false);
+        onSitBench?.();
       }}
     >
       {/* 1. SEAT CUSHION (Leather upholstered top) */}
       <mesh position={[0, 0.45, 0]} receiveShadow castShadow>
         <boxGeometry args={[2.6, 0.16, 0.9]} />
-        <meshStandardMaterial 
-          color={cushionColor} 
-          roughness={0.45}
-          metalness={0.05}
-          envMapIntensity={0.6}
-        />
+        <meshStandardMaterial color={CUSHION_COLOR} roughness={0.45} metalness={0.05} envMapIntensity={0.6} />
       </mesh>
 
       {/* Button Tufting Seams Accent Lines */}
@@ -55,31 +42,21 @@ function MuseumBench({
       {/* 2. GOLD METALLIC SUB-FRAME TRIM */}
       <mesh position={[0, 0.36, 0]}>
         <boxGeometry args={[2.64, 0.03, 0.94]} />
-        <meshStandardMaterial 
-          color={goldAccent} 
-          metalness={0.9}
-          roughness={0.25}
-          envMapIntensity={1.2}
-        />
+        <meshStandardMaterial color={GOLD_ACCENT} metalness={0.9} roughness={0.25} envMapIntensity={1.2} />
       </mesh>
 
       {/* 3. EBONY WOOD STAND / LEGS */}
-      {/* Left Block Leg */}
-      <mesh position={[-1.05, 0.18, 0]} receiveShadow castShadow>
-        <boxGeometry args={[0.18, 0.36, 0.84]} />
-        <meshStandardMaterial color={baseColor} roughness={0.3} metalness={0.1} />
-      </mesh>
-
-      {/* Right Block Leg */}
-      <mesh position={[1.05, 0.18, 0]} receiveShadow castShadow>
-        <boxGeometry args={[0.18, 0.36, 0.84]} />
-        <meshStandardMaterial color={baseColor} roughness={0.3} metalness={0.1} />
-      </mesh>
+      {[-1.05, 1.05].map((x) => (
+        <mesh key={`leg-${x}`} position={[x, 0.18, 0]} receiveShadow castShadow>
+          <boxGeometry args={[0.18, 0.36, 0.84]} />
+          <meshStandardMaterial color={BASE_COLOR} roughness={0.3} metalness={0.1} />
+        </mesh>
+      ))}
 
       {/* Center Stretcher Beam */}
       <mesh position={[0, 0.1, 0]}>
         <boxGeometry args={[2.1, 0.06, 0.1]} />
-        <meshStandardMaterial color={baseColor} roughness={0.3} metalness={0.1} />
+        <meshStandardMaterial color={BASE_COLOR} roughness={0.3} metalness={0.1} />
       </mesh>
 
       {/* 4. LEATHER GUESTBOOK / CATALOGUE BOOKLET ON BENCH */}
@@ -91,10 +68,10 @@ function MuseumBench({
         {/* Gold Leaf Title Stamp on Cover */}
         <mesh position={[0, 0.013, 0]}>
           <boxGeometry args={[0.18, 0.001, 0.1]} />
-          <meshStandardMaterial color={goldAccent} metalness={0.9} roughness={0.2} />
+          <meshStandardMaterial color={GOLD_ACCENT} metalness={0.9} roughness={0.2} />
         </mesh>
       </group>
-    </group>
+    </AimTargets>
   );
 }
 

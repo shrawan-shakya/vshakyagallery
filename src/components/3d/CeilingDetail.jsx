@@ -14,14 +14,13 @@ const BAND_D = 0.12;
 const BEAM_W = 0.09;
 const BEAM_D = 0.025;
 
+const BAND_COLOR = '#17171f';
+const BEAM_COLOR = '#20202b';
+
 // Quiet ceiling: softened perimeter band, whisper-faint cage grid, and slim
 // recessed channels that carry the tube lights. The grid skips the tube-light
 // rows, where the lit tubes carry their own line.
-export default function CeilingDetail({ theme }) {
-  const isDark = theme === 'dark';
-  const bandColor = isDark ? '#17171f' : '#f0ece1';
-  const beamColor = isDark ? '#20202b' : '#f6f3ea';
-
+export default function CeilingDetail() {
   const gridLines = [];
   for (let v = -SIZE / 2 + CELL; v <= SIZE / 2 - CELL + 0.01; v += CELL) {
     gridLines.push(+v.toFixed(2));
@@ -34,10 +33,10 @@ export default function CeilingDetail({ theme }) {
   const yBeamCross = yBeam - 0.002;
 
   const bandMat = (
-    <meshStandardMaterial color={bandColor} roughness={0.96} metalness={0} envMapIntensity={0.2} />
+    <meshStandardMaterial color={BAND_COLOR} roughness={0.96} metalness={0} envMapIntensity={0.2} />
   );
   const beamMat = (
-    <meshStandardMaterial color={beamColor} roughness={1} metalness={0} envMapIntensity={0.12} />
+    <meshStandardMaterial color={BEAM_COLOR} roughness={1} metalness={0} envMapIntensity={0.12} />
   );
 
   return (

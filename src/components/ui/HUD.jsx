@@ -6,8 +6,6 @@ import {
   HelpCircle, 
   X, 
   BookOpen, 
-  Sun, 
-  Moon, 
   Sparkles,
   MousePointerClick,
   Keyboard,
@@ -23,7 +21,6 @@ import { ambientSoundscape } from '../../utils/ambientAudio';
 
 export default function HUD({
   mode,
-  viewMode,
   onToggleMode,
   selectedArtwork,
   isSeated = false,
@@ -32,35 +29,20 @@ export default function HUD({
   onOpenAdmin,
   artworks = [],
   rooms = [],
-  artists = [],
   currentRoomId = 'room-main',
   onSelectRoom,
   onSelectArtwork,
   focusTarget,
-  focusedArtwork,
   isLocked = false,
   lockFailed = false,
   lockRequestRef,
-  isTouchDevice: externalIsTouchDevice,
-  theme: externalTheme,
-  setTheme: externalSetTheme,
+  isTouchDevice = false,
 }) {
   const [showHelp, setShowHelp] = useState(false);
   const [showGuide, setShowGuide] = useState(false);
   const [showWalkOverlay, setShowWalkOverlay] = useState(false);
   const [hasWalkedOnce, setHasWalkedOnce] = useState(false);
-  const [internalIsTouchDevice, setInternalIsTouchDevice] = useState(false);
   const [isMusicPlaying, setIsMusicPlaying] = useState(true);
-
-  const isTouchDevice = externalIsTouchDevice !== undefined ? externalIsTouchDevice : internalIsTouchDevice;
-
-  useEffect(() => {
-    if (typeof window !== 'undefined') {
-      setInternalIsTouchDevice(
-        'ontouchstart' in window || navigator.maxTouchPoints > 0
-      );
-    }
-  }, []);
 
   // Auto-start ambient music on load & satisfy browser autoplay policies on first interaction
   useEffect(() => {
@@ -108,17 +90,8 @@ export default function HUD({
     setIsMusicPlaying(playing);
   };
 
-  const currentMode = mode || viewMode || 'orbit';
-  const isDark = true;
-  const isWalkMode = currentMode === 'walk';
-
-  const targetId = focusTarget || focusedArtwork;
-  const activeFocusArtwork = typeof targetId === 'object' ? targetId : artworks.find(a => a.id === targetId);
-
-  // Force dark theme class on html element
-  useEffect(() => {
-    document.documentElement.classList.add('dark');
-  }, []);
+  const isWalkMode = mode === 'walk';
+  const activeFocusArtwork = artworks.find((a) => a.id === focusTarget);
 
   // First time entering walk mode shows quick tutorial popup
   useEffect(() => {

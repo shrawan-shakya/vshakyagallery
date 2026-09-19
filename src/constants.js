@@ -12,3 +12,7 @@ export const ART_HANG_CENTER = 1.55; // Museum-standard artwork centerline heigh
 // Imperial → metric conversion factors
 export const IN = 0.0254; // one inch in meters
 export const FT = 0.3048; // one foot in meters
+
+// Object layer tested by the walk-mode aim raycast. Only interactables and
+// the geometry that can occlude them are put on it (see AimTargets).
+export const AIM_LAYER = 1;

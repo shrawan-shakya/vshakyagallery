@@ -12,7 +12,6 @@ const tmpTgt = new THREE.Vector3();
 
 export default function GalleryCamera({ selectedArtwork, isSeated = false, artworks = [], disabled = false }) {
   const controlsRef = useRef();
-  const wasDisabled = useRef(false);
   const flight = useRef(null);
   const savedView = useRef(null); // where the user was before flying to a painting
   const { camera } = useThree();

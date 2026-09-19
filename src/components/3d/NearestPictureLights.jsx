@@ -11,9 +11,7 @@ import { ROOM_H } from '../../constants';
 const SLOT_COUNT = 4;
 const RESCAN_INTERVAL = 0.25;
 
-export default function NearestPictureLights({ artworks, theme }) {
-  const isDark = theme === 'dark';
-
+export default function NearestPictureLights({ artworks }) {
   const slots = useMemo(
     () =>
       Array.from({ length: SLOT_COUNT }, () => ({
@@ -124,7 +122,7 @@ export default function NearestPictureLights({ artworks, theme }) {
           // Distance <= 1.8m -> 1.30x boost (peak intensity ~ 15.5)
           // Distance >= 6.0m -> 0.70x (intensity ~ 8.5)
           const proxFactor = THREE.MathUtils.clamp(1.30 - (dist - 1.8) * 0.12, 0.70, 1.30);
-          slot.goal = (isDark ? 12 : 7.5) * proxFactor;
+          slot.goal = 12 * proxFactor;
         }
       }
 

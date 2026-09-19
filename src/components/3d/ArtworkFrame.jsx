@@ -1,8 +1,9 @@
-import React, { useRef, useState, useEffect, useMemo, memo } from 'react';
+import React, { useRef, useState, useEffect, useLayoutEffect, useMemo, useCallback, memo } from 'react';
 import { useCursor, useTexture } from '@react-three/drei';
 import { useThree } from '@react-three/fiber';
 import * as THREE from 'three';
 import DidacticLabel from './DidacticLabel';
+import AimTargets from './AimTargets';
 import { ROOM_H } from '../../constants';
 import { buildMiteredLoopGeometry } from '../../utils/moulding';
 
@@ -59,33 +60,115 @@ const RAIL_PROFILE = [
 
 const RAIL_BACK_Z = -0.035;
 const GRAIN_TILE = 0.85;
+const MAX_TEX_SIDE = 2048;
 
-function ArtworkFrame({
-  artwork,
-  theme,
-  interactive = true,
-  onSelect,
-  onHoverChange,
-}) {
-  const { 
-    id, 
-    title = 'Untitled', 
-    artist = 'Unknown Artist', 
-    year = '', 
-    medium = 'Mixed Media', 
-    imageUrl = '', 
-    position = [0, 1.55, 0], 
-    rotation = [0, 0, 0], 
-    width = 1.2, 
-    height = 0.9 
+const WALNUT_URLS = {
+  map: '/textures/frame/walnut_diff.jpg',
+  normalMap: '/textures/frame/walnut_nor_gl.jpg',
+  roughnessMap: '/textures/frame/walnut_rough.jpg',
+};
+
+// drei caches the walnut set across every frame, so sampling settings are
+// applied once — re-flagging needsUpdate per frame would re-upload it
+let walnutPrepared = false;
+function prepareWalnut(woodTex) {
+  if (walnutPrepared) return;
+  walnutPrepared = true;
+  woodTex.map.colorSpace = THREE.SRGBColorSpace;
+  Object.values(woodTex).forEach((t) => {
+    t.wrapS = THREE.RepeatWrapping;
+    t.wrapT = THREE.RepeatWrapping;
+    t.generateMipmaps = true;
+    t.minFilter = THREE.LinearMipmapLinearFilter;
+    t.magFilter = THREE.LinearFilter;
+    t.anisotropy = 16;
+    t.needsUpdate = true;
+  });
+}
+
+// One shared "Curator Loading..." placeholder for every frame
+let loadingTexture = null;
+function getLoadingTexture() {
+  if (loadingTexture) return loadingTexture;
+  const canvas = document.createElement('canvas');
+  canvas.width = 256;
+  canvas.height = 256;
+  const ctx = canvas.getContext('2d');
+  ctx.fillStyle = '#111116';
+  ctx.fillRect(0, 0, 256, 256);
+  ctx.fillStyle = '#d97706';
+  ctx.font = 'bold 14px sans-serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText('Curator Loading...', 128, 128);
+  loadingTexture = new THREE.CanvasTexture(canvas);
+  return loadingTexture;
+}
+
+// Procedural stand-in when the image cannot be fetched (CORS / network)
+function makeFallbackTexture(title) {
+  const canvas = document.createElement('canvas');
+  canvas.width = 512;
+  canvas.height = 512;
+  const ctx = canvas.getContext('2d');
+
+  const grad = ctx.createLinearGradient(0, 0, 512, 512);
+  grad.addColorStop(0, '#1e1b4b');
+  grad.addColorStop(0.5, '#311042');
+  grad.addColorStop(1, '#090514');
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, 512, 512);
+
+  ctx.strokeStyle = 'rgba(245, 158, 11, 0.2)';
+  ctx.lineWidth = 8;
+  ctx.strokeRect(40, 40, 432, 432);
+
+  ctx.fillStyle = 'rgba(245, 158, 11, 0.06)';
+  ctx.beginPath();
+  ctx.arc(256, 256, 120, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.strokeStyle = 'rgba(255, 255, 255, 0.08)';
+  ctx.beginPath();
+  ctx.moveTo(100, 100);
+  ctx.lineTo(412, 412);
+  ctx.stroke();
+
+  ctx.fillStyle = '#f59e0b';
+  ctx.font = 'bold 24px sans-serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(title, 256, 220);
+
+  ctx.fillStyle = '#94a3b8';
+  ctx.font = '16px sans-serif';
+  ctx.fillText('Gallery Masterpiece', 256, 260);
+
+  ctx.fillStyle = '#64748b';
+  ctx.font = 'bold 11px monospace';
+  ctx.fillText('[ NETWORK / CORS OFFLINE ]', 256, 310);
+
+  return new THREE.CanvasTexture(canvas);
+}
+
+function ArtworkFrame({ artwork, interactive = true, onSelect, onHoverChange }) {
+  const {
+    id,
+    title = 'Untitled',
+    artist = 'Unknown Artist',
+    year = '',
+    medium = 'Mixed Media',
+    imageUrl = '',
+    position = [0, 1.55, 0],
+    rotation = [0, 0, 0],
+    width = 1.2,
+    height = 0.9
   } = artwork || {};
 
   const safePos = useMemo(() => Array.isArray(position) && position.length === 3 ? position : [0, 1.55, 0], [position]);
   const safeRot = useMemo(() => Array.isArray(rotation) && rotation.length === 3 ? rotation : [0, 0, 0], [rotation]);
   const safeW = typeof width === 'number' && !isNaN(width) && width > 0 ? width : 1.2;
   const safeH = typeof height === 'number' && !isNaN(height) && height > 0 ? height : 0.9;
-
-  const isDark = theme === 'dark';
 
   const groupRef = useRef();
 
@@ -101,25 +184,8 @@ function ArtworkFrame({
   }, [safePos]);
 
   // Walnut PBR set (CC0 Poly Haven) — cached across all frames by drei
-  const woodTex = useTexture({
-    map: '/textures/frame/walnut_diff.jpg',
-    normalMap: '/textures/frame/walnut_nor_gl.jpg',
-    roughnessMap: '/textures/frame/walnut_rough.jpg',
-  });
-
-  useMemo(() => {
-    woodTex.map.colorSpace = THREE.SRGBColorSpace;
-    Object.values(woodTex).forEach((t) => {
-      t.wrapS = THREE.RepeatWrapping;
-      t.wrapT = THREE.RepeatWrapping;
-      t.generateMipmaps = true;
-      t.minFilter = THREE.LinearMipmapLinearFilter;
-      t.magFilter = THREE.LinearFilter;
-      t.anisotropy = 16;
-      t.repeat.set(1, 1);
-      t.needsUpdate = true;
-    });
-  }, [woodTex]);
+  const woodTex = useTexture(WALNUT_URLS);
+  useLayoutEffect(() => prepareWalnut(woodTex), [woodTex]);
 
   // Moulding ring geometries (openings reveal the canvas; each layer tucks under the previous)
   const frameGeos = useMemo(
@@ -130,6 +196,7 @@ function ArtworkFrame({
     }),
     [safeW, safeH]
   );
+  useEffect(() => () => Object.values(frameGeos).forEach((g) => g.dispose()), [frameGeos]);
 
   // Outer swept moulding: grain runs lengthwise per rail, world-unit UVs stay
   // consistent across every frame size
@@ -140,10 +207,12 @@ function ArtworkFrame({
     }),
     [safeW, safeH]
   );
+  useEffect(() => () => railGeo.dispose(), [railGeo]);
 
   const [hovered, setHovered] = useState(false);
-  const [texture, setTexture] = useState(null);
-  const [loading, setLoading] = useState(true);
+  // { url, texture } once loaded, { url, failed: true } on error. Keyed by
+  // url so a stale result never shows while a new image is in flight.
+  const [loaded, setLoaded] = useState(null);
 
   // True when the nearest thing under the pointer belongs to THIS frame.
   // R3F delivers click events even when scenery (a wall) was hit first, so
@@ -163,89 +232,20 @@ function ArtworkFrame({
   // plaque is hovered — the callback is handed to DidacticLabel below.
   useCursor(hovered);
 
-  const handlePlaqueHover = (v) => {
+  const handlePlaqueHover = useCallback((v) => {
     setHovered(v);
     onHoverChange?.(v);
-  };
-
-  // Fallback procedural canvas texture to use if texture load fails (CORS or network issues)
-  const fallbackTexture = useMemo(() => {
-    const canvas = document.createElement('canvas');
-    canvas.width = 512;
-    canvas.height = 512;
-    const ctx = canvas.getContext('2d');
-
-    // Create a beautiful linear gradient
-    const grad = ctx.createLinearGradient(0, 0, 512, 512);
-    grad.addColorStop(0, '#1e1b4b'); // deep indigo
-    grad.addColorStop(0.5, '#311042'); // deep purple
-    grad.addColorStop(1, '#090514'); // very dark purple
-    ctx.fillStyle = grad;
-    ctx.fillRect(0, 0, 512, 512);
-
-    // Decorative geometric shapes to make it look like abstract art
-    ctx.strokeStyle = 'rgba(245, 158, 11, 0.2)'; // gold outline
-    ctx.lineWidth = 8;
-    ctx.strokeRect(40, 40, 432, 432);
-
-    ctx.fillStyle = 'rgba(245, 158, 11, 0.06)';
-    ctx.beginPath();
-    ctx.arc(256, 256, 120, 0, Math.PI * 2);
-    ctx.fill();
-
-    ctx.strokeStyle = 'rgba(255, 255, 255, 0.08)';
-    ctx.beginPath();
-    ctx.moveTo(100, 100);
-    ctx.lineTo(412, 412);
-    ctx.stroke();
-
-    // Text labels
-    ctx.fillStyle = '#f59e0b';
-    ctx.font = 'bold 24px sans-serif';
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.fillText(title, 256, 220);
-
-    ctx.fillStyle = '#94a3b8';
-    ctx.font = '16px sans-serif';
-    ctx.fillText('Gallery Masterpiece', 256, 260);
-
-    ctx.fillStyle = '#64748b';
-    ctx.font = 'bold 11px monospace';
-    ctx.fillText('[ NETWORK / CORS OFFLINE ]', 256, 310);
-
-    const tex = new THREE.CanvasTexture(canvas);
-    return tex;
-  }, [title]);
-
-  // Loading state placeholder texture
-  const loadingTexture = useMemo(() => {
-    const canvas = document.createElement('canvas');
-    canvas.width = 256;
-    canvas.height = 256;
-    const ctx = canvas.getContext('2d');
-    
-    ctx.fillStyle = '#111116';
-    ctx.fillRect(0, 0, 256, 256);
-    
-    ctx.fillStyle = '#d97706';
-    ctx.font = 'bold 14px sans-serif';
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.fillText('Curator Loading...', 128, 128);
-
-    return new THREE.CanvasTexture(canvas);
-  }, []);
+  }, [onHoverChange]);
 
   const { gl } = useThree();
   const maxAniso = useMemo(() => gl?.capabilities?.getMaxAnisotropy?.() ?? 8, [gl]);
 
-  // Asynchronously fetch texture to safely bypass standard React Suspense throws on failure.
+  // Asynchronously fetch the image outside Suspense so a failure can't throw.
   // Oversized uploads are downscaled to MAX_TEX_SIDE before hitting the GPU —
   // a 4000px JPEG spread over one square metre of wall is pure bandwidth waste.
   useEffect(() => {
     let active = true;
-    setLoading(true);
+    let texture = null;
 
     const applyTexture = (tex) => {
       tex.colorSpace = THREE.SRGBColorSpace;
@@ -253,18 +253,19 @@ function ArtworkFrame({
       tex.minFilter = THREE.LinearMipmapLinearFilter;
       tex.magFilter = THREE.LinearFilter;
       tex.anisotropy = maxAniso;
-      setTexture(tex);
-      setLoading(false);
+      texture = tex;
+      setLoaded({ url: imageUrl, texture: tex });
     };
 
-    const MAX_TEX_SIDE = 2048;
     const loader = new THREE.TextureLoader();
     loader.crossOrigin = 'anonymous';
-
     loader.load(
       imageUrl,
       (tex) => {
-        if (!active) return;
+        if (!active) {
+          tex.dispose();
+          return;
+        }
         const img = tex.image;
         const scale = img ? Math.min(1, MAX_TEX_SIDE / Math.max(img.width, img.height)) : 1;
         if (scale >= 1) {
@@ -281,19 +282,23 @@ function ArtworkFrame({
       undefined,
       (err) => {
         console.warn(`Could not load image texture for "${title}" asynchronously:`, err);
-        if (active) {
-          setLoading(false);
-        }
+        if (active) setLoaded({ url: imageUrl, failed: true });
       }
     );
 
+    // Free the GPU copy when the image changes or the frame leaves the room
     return () => {
       active = false;
+      texture?.dispose();
     };
   }, [imageUrl, title, maxAniso]);
 
-  // Select active texture based on loader status
-  const activeTexture = texture ? texture : (loading ? loadingTexture : fallbackTexture);
+  const isCurrent = loaded?.url === imageUrl;
+  const failed = isCurrent && loaded.failed;
+  const fallbackTexture = useMemo(() => (failed ? makeFallbackTexture(title) : null), [failed, title]);
+  useEffect(() => () => fallbackTexture?.dispose(), [fallbackTexture]);
+
+  const activeTexture = isCurrent && loaded.texture ? loaded.texture : failed ? fallbackTexture : getLoadingTexture();
 
   return (
     <group position={safePos} rotation={safeRot}>
@@ -327,11 +332,7 @@ function ArtworkFrame({
         </mesh>
         <mesh position={[0, 0.22, 0]}>
           <cylinderGeometry args={[0.094, 0.094, 0.02, 24]} />
-          <meshStandardMaterial
-            color="#fff3dc"
-            emissive={isDark ? "#ffd9a0" : "#ffe9c4"}
-            emissiveIntensity={isDark ? 3.0 : 2.0}
-          />
+          <meshStandardMaterial color="#fff3dc" emissive="#ffd9a0" emissiveIntensity={3.0} />
         </mesh>
         <mesh position={[0, 0.238, 0]} rotation={[Math.PI / 2, 0, 0]}>
           <torusGeometry args={[0.096, 0.012, 10, 28]} />
@@ -352,88 +353,70 @@ function ArtworkFrame({
           onSelect(id);
         }}
       >
-        {/* 1. OUTER SWEPT MOULDING (smooth walnut PBR + satin varnish look) */}
-        <mesh geometry={railGeo} receiveShadow>
-          <meshStandardMaterial
-            map={woodTex.map}
-            normalMap={woodTex.normalMap}
-            normalScale={[0.18, 0.18]}
-            roughnessMap={woodTex.roughnessMap}
-            roughness={0.42}
-            metalness={0.04}
-            envMapIntensity={1.15}
-          />
-        </mesh>
+        <AimTargets>
+          {/* 1. OUTER SWEPT MOULDING (smooth walnut PBR + satin varnish look) */}
+          <mesh geometry={railGeo} receiveShadow>
+            <meshStandardMaterial
+              map={woodTex.map}
+              normalMap={woodTex.normalMap}
+              normalScale={[0.18, 0.18]}
+              roughnessMap={woodTex.roughnessMap}
+              roughness={0.42}
+              metalness={0.04}
+              envMapIntensity={1.15}
+            />
+          </mesh>
 
-        {/* 2. BEVEL STEP RAIL (darker satin inner moulding) */}
-        <mesh geometry={frameGeos.step} position={[0, 0, -0.037]} receiveShadow>
-          <meshStandardMaterial
-            color={isDark ? "#1c130c" : "#241a12"}
-            roughness={0.52}
-            metalness={0.05}
-            envMapIntensity={0.7}
-          />
-        </mesh>
+          {/* 2. BEVEL STEP RAIL (darker satin inner moulding) */}
+          <mesh geometry={frameGeos.step} position={[0, 0, -0.037]} receiveShadow>
+            <meshStandardMaterial color="#1c130c" roughness={0.52} metalness={0.05} envMapIntensity={0.7} />
+          </mesh>
 
-        {/* 3. GOLD FILLET (SHAKYA metallic gold strip) */}
-        <mesh geometry={frameGeos.fillet} position={[0, 0, -0.038]} receiveShadow>
-          <meshStandardMaterial
-            color="#D4AF37"
-            metalness={0.92}
-            roughness={0.28}
-            envMapIntensity={1.1}
-          />
-        </mesh>
+          {/* 3. GOLD FILLET (SHAKYA metallic gold strip) */}
+          <mesh geometry={frameGeos.fillet} position={[0, 0, -0.038]} receiveShadow>
+            <meshStandardMaterial color="#D4AF37" metalness={0.92} roughness={0.28} envMapIntensity={1.1} />
+          </mesh>
 
-        {/* 4. LINEN LINER (matte fabric liner overlapping canvas edge) */}
-        <mesh geometry={frameGeos.liner} position={[0, 0, -0.034]} receiveShadow>
-          <meshStandardMaterial
-            color={isDark ? "#d8d2c4" : "#f2ede1"}
-            roughness={0.95}
-            metalness={0}
-            envMapIntensity={0.3}
-          />
-        </mesh>
+          {/* 4. LINEN LINER (matte fabric liner overlapping canvas edge) */}
+          <mesh geometry={frameGeos.liner} position={[0, 0, -0.034]} receiveShadow>
+            <meshStandardMaterial color="#d8d2c4" roughness={0.95} metalness={0} envMapIntensity={0.3} />
+          </mesh>
 
-        {/* 5. PAINTING CANVAS (realistic physical gallery fine-art canvas with 10% natural lighting absorption) */}
-        <mesh position={[0, 0, 0.011]}>
-          <boxGeometry args={[safeW, safeH, 0.03]} />
-          <meshBasicMaterial
-            map={activeTexture}
-            color="#fafafa"
-            toneMapped={false}
-          />
-        </mesh>
+          {/* 5. PAINTING CANVAS (unlit so the print reads true to the file) */}
+          <mesh position={[0, 0, 0.011]}>
+            <boxGeometry args={[safeW, safeH, 0.03]} />
+            <meshBasicMaterial map={activeTexture} color="#fafafa" toneMapped={false} />
+          </mesh>
 
-        {/* 6. GLAZING — thin float-glass pane recessed behind the liner lip.
-            Near-zero roughness picks up the studio HDR and the spotlight as a
-            soft glazing glare; barely tints the canvas underneath. */}
-        <mesh position={[0, 0, 0.03]}>
-          <boxGeometry args={[safeW - 0.06, safeH - 0.06, 0.004]} />
-          <meshStandardMaterial
-            color="#ffffff"
-            transparent
-            opacity={0.06}
-            roughness={0.02}
-            metalness={0}
-            envMapIntensity={2.4}
-            depthWrite={false}
-          />
-        </mesh>
+          {/* 6. GLAZING — thin float-glass pane recessed behind the liner lip.
+              Near-zero roughness picks up the studio HDR and the spotlight as a
+              soft glazing glare; barely tints the canvas underneath. */}
+          <mesh position={[0, 0, 0.03]}>
+            <boxGeometry args={[safeW - 0.06, safeH - 0.06, 0.004]} />
+            <meshStandardMaterial
+              color="#ffffff"
+              transparent
+              opacity={0.06}
+              roughness={0.02}
+              metalness={0}
+              envMapIntensity={2.4}
+              depthWrite={false}
+            />
+          </mesh>
 
-        {/* 7. DIDACTIC LABEL — ivory wall plaque beside the frame; the only
-              hover-sensitive surface of the artwork */}
-        <DidacticLabel
-          artworkId={id}
-          title={title}
-          artist={artist}
-          year={year}
-          medium={medium}
-          width={safeW}
-          centerY={safePos[1]}
-          onHoverChange={interactive ? handlePlaqueHover : undefined}
-          theme={theme}
-        />
+          {/* 7. DIDACTIC LABEL — ivory wall plaque beside the frame; the only
+                hover-sensitive surface of the artwork */}
+          <DidacticLabel
+            artworkId={id}
+            title={title}
+            artist={artist}
+            year={year}
+            medium={medium}
+            width={safeW}
+            centerY={safePos[1]}
+            onHoverChange={interactive ? handlePlaqueHover : undefined}
+          />
+        </AimTargets>
       </group>
     </group>
   );

@@ -1,5 +1,7 @@
-import React, { useMemo, useRef } from 'react';
+import React, { useRef, memo } from 'react';
 import * as THREE from 'three';
+import { useCanvasTexture } from '../../hooks/useCanvasTexture';
+import { SERIF_FONT, SANS_FONT, setLetterSpacing } from '../../utils/canvasText';
 
 const PANEL_W = 0.46;
 const PANEL_H = 0.302;
@@ -25,7 +27,7 @@ function wrapText(ctx, text, cx, startY, maxWidth, lineHeight, maxLines) {
 
 // Ivory museum didactic panel: hairline frame, serif title, tracked
 // small-caps credit line, medium line, and four baked-in corner screws
-function makeLabelTexture({ title = 'Untitled', artist = 'Unknown Artist', year = '', medium = 'Mixed Media' }) {
+function makeLabelTexture({ title, artist, year, medium }) {
   const safeTitle = String(title || 'Untitled');
   const safeArtist = String(artist || 'Unknown Artist');
   const safeYear = String(year || '');
@@ -61,23 +63,15 @@ function makeLabelTexture({ title = 'Untitled', artist = 'Unknown Artist', year 
 
   // Kicker
   ctx.fillStyle = '#8a8478';
-  ctx.font = '600 16px Outfit, Arial, sans-serif';
-  try {
-    ctx.letterSpacing = '7px';
-  } catch {
-    /* ignore */
-  }
+  ctx.font = `600 16px ${SANS_FONT}`;
+  setLetterSpacing(ctx, 7);
   ctx.fillText('NOW VIEWING', 260, 58);
 
   // Title (serif, wraps to at most two lines)
   ctx.fillStyle = '#141110';
   const titleSize = safeTitle.length > 30 ? 32 : safeTitle.length > 18 ? 38 : 44;
-  ctx.font = `700 ${titleSize}px "Playfair Display", Georgia, serif`;
-  try {
-    ctx.letterSpacing = '1px';
-  } catch {
-    /* ignore */
-  }
+  ctx.font = `700 ${titleSize}px ${SERIF_FONT}`;
+  setLetterSpacing(ctx, 1);
   wrapText(ctx, safeTitle, 256, 104, 430, titleSize * 1.2, 2);
 
   // Rule
@@ -90,23 +84,15 @@ function makeLabelTexture({ title = 'Untitled', artist = 'Unknown Artist', year 
 
   // Artist · year
   ctx.fillStyle = '#45403a';
-  ctx.font = '600 20px Outfit, Arial, sans-serif';
-  try {
-    ctx.letterSpacing = '5px';
-  } catch {
-    /* ignore */
-  }
+  ctx.font = `600 20px ${SANS_FONT}`;
+  setLetterSpacing(ctx, 5);
   const byline = safeYear ? `${safeArtist} · ${safeYear}` : safeArtist;
   ctx.fillText(byline.toUpperCase(), 258, 236);
 
   // Medium
   ctx.fillStyle = '#6d675c';
-  ctx.font = '400 19px Outfit, Arial, sans-serif';
-  try {
-    ctx.letterSpacing = '2px';
-  } catch {
-    /* ignore */
-  }
+  ctx.font = `400 19px ${SANS_FONT}`;
+  setLetterSpacing(ctx, 2);
   wrapText(ctx, safeMedium, 256, 272, 420, 24, 1);
 
   const tex = new THREE.CanvasTexture(c);
@@ -118,8 +104,8 @@ function makeLabelTexture({ title = 'Untitled', artist = 'Unknown Artist', year 
   return tex;
 }
 
-export default function DidacticLabel({ artworkId, title, artist, year, medium, width, centerY, onHoverChange, theme }) {
-  const texture = useMemo(
+function DidacticLabel({ artworkId, title, artist, year, medium, width, centerY, onHoverChange }) {
+  const texture = useCanvasTexture(
     () => makeLabelTexture({ title, artist, year, medium }),
     [title, artist, year, medium],
   );
@@ -157,10 +143,12 @@ export default function DidacticLabel({ artworkId, title, artist, year, medium, 
         map={texture}
         emissive="#ffffff"
         emissiveMap={texture}
-        emissiveIntensity={theme === 'dark' ? 0.16 : 0.05}
+        emissiveIntensity={0.16}
         roughness={0.92}
         metalness={0}
       />
     </mesh>
   );
 }
+
+export default memo(DidacticLabel);

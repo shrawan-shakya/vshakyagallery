@@ -18,8 +18,6 @@ import {
   Eye,
   ArrowUp,
   ArrowDown,
-  Compass,
-  Layers,
   Lock,
   LogOut
 } from 'lucide-react';

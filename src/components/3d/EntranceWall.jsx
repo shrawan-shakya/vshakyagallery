@@ -1,15 +1,20 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useMemo } from 'react';
 import { useTexture } from '@react-three/drei';
 import * as THREE from 'three';
 import { ROOM_H } from '../../constants';
+import { useCanvasTexture } from '../../hooks/useCanvasTexture';
+import { SERIF_FONT, SANS_FONT, setLetterSpacing } from '../../utils/canvasText';
 
 const OPENING_W = 2.8; // Doorway width
 const OPENING_TOP = 3.4; // Doorway header height
 const VEST_DEPTH = 1.7; // Vestibule corridor depth beyond the wall
 const DOOR_W = OPENING_W / 2 - 0.06;
 
+const TRIM_COLOR = '#241a12';
+const VEST_WALL_COLOR = '#101014';
+
 // Vinyl-style exhibition lettering drawn on a transparent canvas
-function makeTitleTexture(useWebfonts) {
+function makeTitleTexture() {
   const c = document.createElement('canvas');
   c.width = 2048;
   c.height = 512;
@@ -17,26 +22,18 @@ function makeTitleTexture(useWebfonts) {
   ctx.clearRect(0, 0, c.width, c.height);
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
+
   ctx.fillStyle = 'rgba(23, 21, 16, 0.93)';
-  try {
-    ctx.letterSpacing = '34px';
-  } catch {
-    /* older browsers */
-  }
-  const serif = useWebfonts ? '"Playfair Display", Georgia' : 'Georgia';
-  ctx.font = `700 250px ${serif}, serif`;
+  setLetterSpacing(ctx, 34);
+  ctx.font = `700 250px ${SERIF_FONT}`;
   ctx.fillText('SHAKYA', 1030, 185);
 
   ctx.fillStyle = 'rgba(23, 21, 16, 0.55)';
   ctx.fillRect(1024 - 380, 300, 760, 3);
 
   ctx.fillStyle = 'rgba(23, 21, 16, 0.72)';
-  try {
-    ctx.letterSpacing = '24px';
-  } catch {
-    /* ignore */
-  }
-  ctx.font = `500 56px ${useWebfonts ? '"Outfit", Arial' : 'Arial'}, sans-serif`;
+  setLetterSpacing(ctx, 24);
+  ctx.font = `500 56px ${SANS_FONT}`;
   ctx.fillText('AUTUMN EXHIBITION · MMXXVI', 1040, 385);
 
   const tex = new THREE.CanvasTexture(c);
@@ -45,28 +42,8 @@ function makeTitleTexture(useWebfonts) {
   return tex;
 }
 
-export default function EntranceWall({ theme, wallBump, wallColor = '#ffffff' }) {
-  const isDark = theme === 'dark';
-
-  // Paint immediately with fallback serif, then redraw once webfonts land
-  const [titleTex, setTitleTex] = useState(() => makeTitleTexture(false));
-  const prevTex = useRef(null);
-  useEffect(() => {
-    let alive = true;
-    const repaint = () => {
-      if (!alive) return;
-      prevTex.current?.dispose();
-      const next = makeTitleTexture(true);
-      prevTex.current = next;
-      setTitleTex(next);
-    };
-    if (typeof document !== 'undefined' && document.fonts?.ready) {
-      document.fonts.ready.then(repaint);
-    }
-    return () => {
-      alive = false;
-    };
-  }, []);
+export default function EntranceWall({ wallBump, wallColor = '#ffffff' }) {
+  const titleTex = useCanvasTexture(makeTitleTexture, []);
 
   // Walnut door panels — clone the cached PBR set so repeat tweaks don't
   // affect the picture frames sharing these textures
@@ -90,27 +67,20 @@ export default function EntranceWall({ theme, wallBump, wallColor = '#ffffff' })
       roughnessMap: mk(walnut.roughnessMap),
     };
   }, [walnut]);
-  const doorMaterial = useMemo(
-    () => (
-      <meshStandardMaterial
-        map={doorMats.map}
-        normalMap={doorMats.normalMap}
-        roughnessMap={doorMats.roughnessMap}
-        roughness={0.5}
-        metalness={0.05}
-        envMapIntensity={0.7}
-      />
-    ),
-    [doorMats],
+  const doorMaterial = (
+    <meshStandardMaterial
+      map={doorMats.map}
+      normalMap={doorMats.normalMap}
+      roughnessMap={doorMats.roughnessMap}
+      roughness={0.5}
+      metalness={0.05}
+      envMapIntensity={0.7}
+    />
   );
 
-  const wallMaterial = useMemo(
-    () => (
-      <meshStandardMaterial color={wallColor} emissive={wallColor} emissiveIntensity={isDark ? 0.18 : 0.1} bumpMap={wallBump} bumpScale={0.002} roughness={0.95} />
-    ),
-    [wallBump, wallColor, isDark],
+  const wallMaterial = (
+    <meshStandardMaterial color={wallColor} emissive={wallColor} emissiveIntensity={0.18} bumpMap={wallBump} bumpScale={0.002} roughness={0.95} />
   );
-  const trimColor = '#241a12';
 
   const segW = 10 - OPENING_W / 2; // 8.6
   const segX = -(OPENING_W / 2 + segW / 2); // -5.7
@@ -155,16 +125,15 @@ export default function EntranceWall({ theme, wallBump, wallColor = '#ffffff' })
       {[-1, 1].map((s) => (
         <mesh key={`jamb-${s}`} position={[s * (OPENING_W / 2 + 0.06), (OPENING_TOP + 0.06) / 2, 9.98]}>
           <boxGeometry args={[0.13, OPENING_TOP + 0.06, 0.26]} />
-          <meshStandardMaterial color={trimColor} roughness={0.45} metalness={0.05} />
+          <meshStandardMaterial color={TRIM_COLOR} roughness={0.45} metalness={0.05} />
         </mesh>
       ))}
       <mesh position={[0, OPENING_TOP + 0.055, 9.98]}>
         <boxGeometry args={[OPENING_W + 0.38, 0.15, 0.26]} />
-        <meshStandardMaterial color={trimColor} roughness={0.45} metalness={0.05} />
+        <meshStandardMaterial color={TRIM_COLOR} roughness={0.45} metalness={0.05} />
       </mesh>
 
-      {/* Threshold bar */}
-      {/* Lifted 1cm above the floor plane so the bottom face can't z-fight with it */}
+      {/* Threshold bar, lifted 1cm above the floor plane so it can't z-fight */}
       <mesh position={[0, 0.022, 10]} receiveShadow>
         <boxGeometry args={[OPENING_W + 0.1, 0.024, 0.32]} />
         <meshStandardMaterial color="#15151a" roughness={0.4} metalness={0.3} />
@@ -173,27 +142,27 @@ export default function EntranceWall({ theme, wallBump, wallColor = '#ffffff' })
       {/* Vestibule shell */}
       <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.001, 10 + VEST_DEPTH / 2]} receiveShadow>
         <planeGeometry args={[OPENING_W + 0.7, VEST_DEPTH]} />
-        <meshStandardMaterial color={isDark ? '#131318' : '#b9b1a2'} roughness={0.85} />
+        <meshStandardMaterial color="#131318" roughness={0.85} />
       </mesh>
       <mesh rotation={[Math.PI / 2, 0, 0]} position={[0, OPENING_TOP, 10 + VEST_DEPTH / 2]}>
         <planeGeometry args={[OPENING_W + 0.7, VEST_DEPTH]} />
-        <meshStandardMaterial color={isDark ? '#0d0d11' : '#efeadd'} roughness={0.95} />
+        <meshStandardMaterial color="#0d0d11" roughness={0.95} />
       </mesh>
       {[-1, 1].map((s) => (
         <mesh key={`vest-wall-${s}`} position={[s * (OPENING_W / 2 + 0.3), (OPENING_TOP + 0.05) / 2, 10 + VEST_DEPTH / 2]}>
           <boxGeometry args={[0.1, OPENING_TOP + 0.05, VEST_DEPTH]} />
-          <meshStandardMaterial color={isDark ? '#101014' : '#e7e0d1'} roughness={0.95} />
+          <meshStandardMaterial color={VEST_WALL_COLOR} roughness={0.95} />
         </mesh>
       ))}
       <mesh position={[0, OPENING_TOP / 2, 10 + VEST_DEPTH + 0.05]}>
         <boxGeometry args={[OPENING_W + 0.7, OPENING_TOP, 0.1]} />
-        <meshStandardMaterial color={isDark ? '#101014' : '#e7e0d1'} roughness={0.95} />
+        <meshStandardMaterial color={VEST_WALL_COLOR} roughness={0.95} />
       </mesh>
 
       {/* Runner mat */}
       <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.02, 10.85]} receiveShadow>
         <planeGeometry args={[2.1, 1.15]} />
-        <meshStandardMaterial color={isDark ? '#0f0f13' : '#4a423a'} roughness={0.98} />
+        <meshStandardMaterial color="#0f0f13" roughness={0.98} />
       </mesh>
 
       {/* Recessed vestibule downlights */}
@@ -203,19 +172,13 @@ export default function EntranceWall({ theme, wallBump, wallColor = '#ffffff' })
             <circleGeometry args={[0.075, 24]} />
             <meshStandardMaterial
               color="#fff3dc"
-              emissive={isDark ? '#ffd9a0' : '#ffe9c4'}
-              emissiveIntensity={isDark ? 2.2 : 1.5}
+              emissive="#ffd9a0"
+              emissiveIntensity={2.2}
               polygonOffset
               polygonOffsetFactor={-1}
             />
           </mesh>
-          <pointLight
-            position={[x, OPENING_TOP - 0.2, 10.9]}
-            intensity={isDark ? 4 : 2.5}
-            distance={3.6}
-            decay={2}
-            color={isDark ? '#ffe2b8' : '#fff2dc'}
-          />
+          <pointLight position={[x, OPENING_TOP - 0.2, 10.9]} intensity={4} distance={3.6} decay={2} color="#ffe2b8" />
         </group>
       ))}
 
@@ -230,11 +193,11 @@ export default function EntranceWall({ theme, wallBump, wallColor = '#ffffff' })
           {[0.78, -0.78].map((oy) => (
             <mesh key={oy} position={[side * (DOOR_W / 2), OPENING_TOP / 2 - 0.05 + oy, 0.032]}>
               <boxGeometry args={[DOOR_W - 0.36, 1.05, 0.012]} />
-              <meshStandardMaterial color={isDark ? '#1c130c' : '#241a12'} roughness={0.5} metalness={0.04} />
+              <meshStandardMaterial color="#1c130c" roughness={0.5} metalness={0.04} />
             </mesh>
           ))}
           {/* Pull handle near the free edge */}
-          <mesh position={[side * (DOOR_W - 0.14), 1.55, 0.07]} rotation={[0, 0, 0]}>
+          <mesh position={[side * (DOOR_W - 0.14), 1.55, 0.07]}>
             <cylinderGeometry args={[0.016, 0.016, 0.5, 12]} />
             <meshStandardMaterial color="#8a8578" metalness={0.9} roughness={0.28} />
           </mesh>
