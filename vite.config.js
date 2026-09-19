@@ -11,8 +11,11 @@ const API_PROXY = {
 // https://vite.dev/config/
 export default defineConfig({
   plugins: [react(), tailwindcss()],
-  server: { proxy: API_PROXY },
-  preview: { proxy: API_PROXY },
+  // host: true binds 0.0.0.0 so phones and other machines on the LAN can open the
+  // gallery; Vite prints the Network URL on start. Express already listens on all
+  // interfaces, and the proxy target stays localhost because the proxy runs here.
+  server: { host: true, proxy: API_PROXY },
+  preview: { host: true, proxy: API_PROXY },
   build: {
     rolldownOptions: {
       output: {
