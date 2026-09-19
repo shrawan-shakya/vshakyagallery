@@ -649,11 +649,9 @@ function getWoolKnotBumpTexture() {
  * Reduces 2,000 WebGL draw calls down to 2 draw calls per carpet!
  */
 
-function DenseFringesInstanced({ width, depth, pileThickness, hasFringes }) {
+function DenseFringesInstanced({ width, depth, pileThickness, hasFringes, threadsPerSide }) {
   const leftRef = useRef(null);
   const rightRef = useRef(null);
-
-  const threadsPerSide = 140; // High-density plush count
   const halfW = width / 2;
   const fringeY = pileThickness * 0.3;
 
@@ -684,7 +682,7 @@ function DenseFringesInstanced({ width, depth, pileThickness, hasFringes }) {
       items.push({ posZ, posY, rotY, rotZ, len, color });
     }
     return items;
-  }, [hasFringes, depth]);
+  }, [hasFringes, depth, threadsPerSide]);
 
   useLayoutEffect(() => {
     if (!hasFringes || fringeParams.length === 0) return;
@@ -741,6 +739,7 @@ function DenseFringesInstanced({ width, depth, pileThickness, hasFringes }) {
       {/* 1 Single WebGL Draw Call for Left Instanced Off-White Wool Fringes (-X) */}
       <group position={[-halfW - 0.08, fringeY, 0]}>
         <instancedMesh
+          key={threadsPerSide}
           ref={leftRef}
           args={[fringeGeometry, fringeMaterial, threadsPerSide]}
           receiveShadow
@@ -750,6 +749,7 @@ function DenseFringesInstanced({ width, depth, pileThickness, hasFringes }) {
       {/* 1 Single WebGL Draw Call for Right Instanced Off-White Wool Fringes (+X) */}
       <group position={[halfW + 0.08, fringeY, 0]}>
         <instancedMesh
+          key={threadsPerSide}
           ref={rightRef}
           args={[fringeGeometry, fringeMaterial, threadsPerSide]}
           receiveShadow
@@ -766,6 +766,7 @@ function NepaleseCarpet({
   variant = 'mandala', // 'mandala' | 'runner' | 'royal_dragon' | 'entrance_welcome'
   hasFringes = true,
   pileThickness = 0.014, // 14mm pile thickness
+  fringeThreads = 140, // tassels per side (quality tier)
 }) {
   const [width, depth] = size;
 
@@ -817,6 +818,7 @@ function NepaleseCarpet({
         depth={depth}
         pileThickness={pileThickness}
         hasFringes={hasFringes}
+        threadsPerSide={fringeThreads}
       />
     </group>
   );

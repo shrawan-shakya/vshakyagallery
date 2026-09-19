@@ -1,6 +1,6 @@
 import React, { useState, useEffect, Suspense, useRef, useMemo, useCallback, lazy } from 'react';
 import { Canvas, useThree } from '@react-three/fiber';
-import { Environment, useProgress, PerformanceMonitor, Stats } from '@react-three/drei';
+import { Environment, useProgress, PerformanceMonitor, Preload, Stats } from '@react-three/drei';
 import { EffectComposer, Bloom, Vignette } from '@react-three/postprocessing';
 import * as THREE from 'three';
 import { fetchArtworksAPI, fetchRoomsAPI, fetchArtistsAPI, fallbackArtworks } from './data/artworks';
@@ -15,6 +15,14 @@ import RoomPortal from './components/3d/RoomPortal';
 import MuseumBench from './components/3d/MuseumBench';
 import NearestPictureLights from './components/3d/NearestPictureLights';
 import { getColliders } from './utils/hallLayouts';
+import {
+  QUALITY_TIERS,
+  detectQualityTier,
+  lowerTier,
+  nextQualityPreference,
+  readQualityPreference,
+  writeQualityPreference,
+} from './utils/quality';
 
 // UI Components
 import HUD from './components/ui/HUD';
@@ -105,15 +113,28 @@ function FullscreenGalleryLoader() {
 
 // The gallery is fully static from the lights' point of view, so the shadow
 // map only needs to render once (and after scene swaps) instead of every frame.
-function StaticShadows({ refreshKey }) {
+function StaticShadows({ refreshKey, shadowsEnabled }) {
   const gl = useThree((s) => s.gl);
+  const scene = useThree((s) => s.scene);
+
+  // Toggling the shadow map changes every lit material's shader, and three
+  // only recompiles on material.needsUpdate — so flag them all when it flips
+  useEffect(() => {
+    scene.traverse((o) => {
+      if (!o.material) return;
+      [].concat(o.material).forEach((m) => {
+        m.needsUpdate = true;
+      });
+    });
+  }, [scene, shadowsEnabled]);
+
   useEffect(() => {
     gl.shadowMap.autoUpdate = false;
     gl.shadowMap.needsUpdate = true;
     return () => {
       gl.shadowMap.autoUpdate = true;
     };
-  }, [gl, refreshKey]);
+  }, [gl, refreshKey, shadowsEnabled]);
   return null;
 }
 
@@ -121,6 +142,7 @@ function StaticShadows({ refreshKey }) {
 const BENCH_POSITION = [0, 0, -4.0];
 const BOARD_POSITION = [2.4, 0, 9.15];
 const BOARD_ROTATION = [0, Math.PI + 0.22, 0];
+const SHADOW_CONFIG = { type: THREE.PCFShadowMap };
 
 // Specialized Error Boundary around post-processing effects.
 // If shaders or context attributes fail, unmount effects without crashing the 3D gallery.
@@ -268,13 +290,33 @@ export default function App() {
     [],
   );
 
-  // Adaptive resolution: start conservative at 1.0 and let PerformanceMonitor
-  // raise it to the display DPR once the GPU proves it has headroom.
-  const maxDpr = useMemo(
-    () => Math.min(typeof window !== 'undefined' ? window.devicePixelRatio || 1 : 1, 1.5),
-    [],
-  );
-  const [dpr, setDpr] = useState(1);
+  // Rendering quality: the visitor's preference (auto, or a pinned tier) plus
+  // the auto-detected tier, which PerformanceMonitor may demote. Resolution
+  // floats inside the tier's DPR range, never above the display's own ratio.
+  const [qualityPref, setQualityPref] = useState(readQualityPreference);
+  const [autoTier, setAutoTier] = useState(detectQualityTier);
+  const quality = QUALITY_TIERS[qualityPref === 'auto' ? autoTier : qualityPref];
+  const displayDpr = typeof window !== 'undefined' ? window.devicePixelRatio || 1 : 1;
+  const [dprRaw, setDprRaw] = useState(quality.dpr[0]);
+  const dprMin = quality.dpr[0];
+  const dprMax = Math.min(quality.dpr[1], Math.max(displayDpr, dprMin));
+  const dpr = THREE.MathUtils.clamp(dprRaw, dprMin, dprMax);
+
+  const handleCycleQuality = useCallback(() => {
+    const next = nextQualityPreference(qualityPref);
+    writeQualityPreference(next);
+    setQualityPref(next);
+  }, [qualityPref]);
+
+  // Frame-rate feedback: shave resolution first, then step the auto tier down
+  const demoteAutoTier = useCallback(() => {
+    if (qualityPref === 'auto') setAutoTier((t) => lowerTier(t));
+  }, [qualityPref]);
+  const handlePerfDecline = useCallback(() => {
+    if (dpr > dprMin + 0.01) setDprRaw(Math.max(dprMin, dpr - 0.2));
+    else demoteAutoTier();
+  }, [dpr, dprMin, demoteAutoTier]);
+  const handlePerfIncline = useCallback(() => setDprRaw(dprMax), [dprMax]);
   const showStats = useMemo(
     () => typeof window !== 'undefined' && new URLSearchParams(window.location.search).has('stats'),
     [],
@@ -445,7 +487,7 @@ export default function App() {
       {/* 3D R3F Viewport Canvas */}
       <ErrorBoundary>
         <Canvas
-          shadows={{ type: THREE.PCFShadowMap }}
+          shadows={quality.shadows ? SHADOW_CONFIG : false}
           flat
           dpr={dpr}
           gl={{
@@ -460,14 +502,14 @@ export default function App() {
           style={{ width: '100vw', height: '100vh', display: 'block' }}
         >
           <Suspense fallback={null}>
-            <StaticShadows refreshKey={shadowRefreshKey} />
+            <StaticShadows refreshKey={shadowRefreshKey} shadowsEnabled={quality.shadows} />
             {showStats && <Stats />}
             <PerformanceMonitor
               bounds={() => [45, 60]}
               flipflops={4}
-              onFallback={() => setDpr(1)}
-              onDecline={() => setDpr((d) => Math.max(1, d - 0.25))}
-              onIncline={() => setDpr(maxDpr)}
+              onFallback={demoteAutoTier}
+              onDecline={handlePerfDecline}
+              onIncline={handlePerfIncline}
             />
             <Suspense fallback={null}>
               <Environment files="/hdri/gallery_studio.hdr" environmentIntensity={0.22} />
@@ -477,10 +519,10 @@ export default function App() {
             <Lights />
 
             {/* Fixed pool of real spotlights that follow the nearest artworks */}
-            <NearestPictureLights artworks={artworksList} />
+            <NearestPictureLights artworks={artworksList} slotCount={quality.spotSlots} />
 
             {/* Architectural Geometry — hall layout drives partitions/islands/lighting */}
-            <GalleryRoom wallColor={currentWallColor} hallLayout={currentHallLayout} />
+            <GalleryRoom wallColor={currentWallColor} hallLayout={currentHallLayout} quality={quality} />
 
             {/* Central Museum Leather Bench */}
             <MuseumBench position={BENCH_POSITION} onSitBench={handleSitBench} />
@@ -503,6 +545,7 @@ export default function App() {
                 interactive={!isWalkMode}
                 onSelect={handleSelectArtwork}
                 onHoverChange={setArtworkHovered}
+                quality={quality}
               />
             ))}
 
@@ -537,9 +580,21 @@ export default function App() {
 
             {/* Cinematic Post-Processing Effects with Safe Fallback */}
             <SafeEffectComposer multisampling={1}>
-              <Bloom mipmapBlur luminanceThreshold={1.0} luminanceSmoothing={0.25} intensity={0.2} />
+              {quality.bloom && (
+                <Bloom
+                  mipmapBlur
+                  levels={quality.bloomLevels}
+                  luminanceThreshold={1.0}
+                  luminanceSmoothing={0.25}
+                  intensity={0.2}
+                />
+              )}
               <Vignette offset={0.22} darkness={0.35} />
             </SafeEffectComposer>
+
+            {/* Compile every shader and upload every texture while the splash
+                screen is still up, instead of hitching on first sight */}
+            <Preload all />
           </Suspense>
         </Canvas>
       </ErrorBoundary>
@@ -582,6 +637,9 @@ export default function App() {
         onToggleMode={handleToggleMode}
         onSelectArtwork={handleSelectArtwork}
         onResetView={handleResetView}
+        quality={quality}
+        qualityPreference={qualityPref}
+        onCycleQuality={handleCycleQuality}
       />
 
       {/* Touch joystick (walk mode only) */}

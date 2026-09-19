@@ -27,7 +27,7 @@ function wrapText(ctx, text, cx, startY, maxWidth, lineHeight, maxLines) {
 
 // Ivory museum didactic panel: hairline frame, serif title, tracked
 // small-caps credit line, medium line, and four baked-in corner screws
-function makeLabelTexture({ title, artist, year, medium }) {
+function makeLabelTexture({ title, artist, year, medium, anisotropy }) {
   const safeTitle = String(title || 'Untitled');
   const safeArtist = String(artist || 'Unknown Artist');
   const safeYear = String(year || '');
@@ -100,14 +100,14 @@ function makeLabelTexture({ title, artist, year, medium }) {
   tex.generateMipmaps = true;
   tex.minFilter = THREE.LinearMipmapLinearFilter;
   tex.magFilter = THREE.LinearFilter;
-  tex.anisotropy = 16;
+  tex.anisotropy = anisotropy;
   return tex;
 }
 
-function DidacticLabel({ artworkId, title, artist, year, medium, width, centerY, onHoverChange }) {
+function DidacticLabel({ artworkId, title, artist, year, medium, width, centerY, onHoverChange, anisotropy = 16 }) {
   const texture = useCanvasTexture(
-    () => makeLabelTexture({ title, artist, year, medium }),
-    [title, artist, year, medium],
+    () => makeLabelTexture({ title, artist, year, medium, anisotropy }),
+    [title, artist, year, medium, anisotropy],
   );
 
   const meshRef = useRef();

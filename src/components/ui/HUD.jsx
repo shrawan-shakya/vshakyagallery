@@ -15,7 +15,8 @@ import {
   Armchair,
   Volume1,
   Volume2,
-  VolumeX
+  VolumeX,
+  Gauge
 } from 'lucide-react';
 import { ambientSoundscape } from '../../utils/ambientAudio';
 
@@ -37,6 +38,9 @@ export default function HUD({
   lockFailed = false,
   lockRequestRef,
   isTouchDevice = false,
+  quality,
+  qualityPreference = 'auto',
+  onCycleQuality,
 }) {
   const [showHelp, setShowHelp] = useState(false);
   const [showGuide, setShowGuide] = useState(false);
@@ -156,6 +160,20 @@ export default function HUD({
           >
             {isWalkMode ? <Orbit className="w-5 h-5 text-[#D4AF37]" /> : <Footprints className="w-5 h-5 text-[#D4AF37]" />}
           </button>
+
+          {/* Rendering quality: Auto follows the GPU detector; a pinned tier sticks */}
+          {quality && (
+            <button
+              onClick={onCycleQuality}
+              className="px-3 h-10 rounded-none bg-[#111111]/90 backdrop-blur-md border border-[#D4AF37]/30 text-[#FAFAFA] hover:text-[#D4AF37] hover:border-[#D4AF37] flex items-center gap-1.5 transition-all active:scale-95 shadow-md"
+              title="Rendering quality — click to cycle Auto → Low → Medium → High"
+            >
+              <Gauge className="w-4 h-4 text-[#D4AF37]" />
+              <span className="hidden sm:inline text-[9px] font-mono uppercase tracking-luxury-wide">
+                {qualityPreference === 'auto' ? `Auto · ${quality.label}` : quality.label}
+              </span>
+            </button>
+          )}
 
           {/* Standalone Audio Button & Popover Menu */}
           <div className="relative">
@@ -309,7 +327,7 @@ export default function HUD({
                       }`}
                     >
                       <img 
-                        src={art.imageUrl} 
+                        src={art.imageUrlSm || art.imageUrl} 
                         alt={art.title} 
                         className="w-10 h-10 object-cover rounded-none border border-white/10"
                       />

@@ -14,6 +14,18 @@ npm run dev            # Vite on :5173, API on :3001 (proxied under /api and /up
 
 Open `http://localhost:5173`. Add `?stats` to the URL for an FPS overlay.
 
+## Rendering quality
+
+The gauge button in the HUD cycles Auto → Low → Medium → High and remembers
+the choice in `localStorage`. Auto classifies the GPU from its WebGL renderer
+string (no network) and steps down a tier when frames stay under 45 fps. The
+tier table in `src/utils/quality.js` drives resolution, shadows, bloom, the
+area lights, the following-spotlight pool, texture size and carpet fringe
+density.
+
+Uploads are re-encoded server-side with `sharp` to WebP at 2048px and 1024px;
+the low tier and all thumbnails use the small variant.
+
 ## Scripts
 
 | Script | What it does |

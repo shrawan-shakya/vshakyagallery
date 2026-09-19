@@ -8,20 +8,19 @@ import { ROOM_H } from '../../constants';
 // renderer never recompiles shaders (a visible stutter), while visitors get
 // genuine specular highlights and wall pools for the art they're actually
 // looking at. The remaining paintings carry the baked wash in ArtworkFrame.
-const SLOT_COUNT = 4;
 const RESCAN_INTERVAL = 0.25;
 
-export default function NearestPictureLights({ artworks }) {
+export default function NearestPictureLights({ artworks, slotCount = 4 }) {
   const slots = useMemo(
     () =>
-      Array.from({ length: SLOT_COUNT }, () => ({
+      Array.from({ length: slotCount }, () => ({
         target: new THREE.Object3D(),
         light: null,
         artId: null,
         level: 0,
         goal: 0,
       })),
-    [],
+    [slotCount],
   );
 
   const scanClock = useRef(RESCAN_INTERVAL);
@@ -63,7 +62,7 @@ export default function NearestPictureLights({ artworks }) {
       ranked.sort((a, b) => a[0] - b[0]);
 
       const topIds = new Set(
-        ranked.slice(0, SLOT_COUNT).map(([, art]) => art.id),
+        ranked.slice(0, slotCount).map(([, art]) => art.id),
       );
       const taken = new Set();
       slots.forEach((slot) => {

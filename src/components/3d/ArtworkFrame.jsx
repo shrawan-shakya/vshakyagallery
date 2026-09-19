@@ -6,6 +6,7 @@ import DidacticLabel from './DidacticLabel';
 import AimTargets from './AimTargets';
 import { ROOM_H } from '../../constants';
 import { buildMiteredLoopGeometry } from '../../utils/moulding';
+import { QUALITY_TIERS } from '../../utils/quality';
 
 // Rectangular moulding ring with a centered opening (extruded along +Z)
 function makeRingGeometry(outerW, outerH, border, depth) {
@@ -60,7 +61,6 @@ const RAIL_PROFILE = [
 
 const RAIL_BACK_Z = -0.035;
 const GRAIN_TILE = 0.85;
-const MAX_TEX_SIDE = 2048;
 
 const WALNUT_URLS = {
   map: '/textures/frame/walnut_diff.jpg',
@@ -71,7 +71,7 @@ const WALNUT_URLS = {
 // drei caches the walnut set across every frame, so sampling settings are
 // applied once — re-flagging needsUpdate per frame would re-upload it
 let walnutPrepared = false;
-function prepareWalnut(woodTex) {
+function prepareWalnut(woodTex, anisotropy) {
   if (walnutPrepared) return;
   walnutPrepared = true;
   woodTex.map.colorSpace = THREE.SRGBColorSpace;
@@ -81,7 +81,7 @@ function prepareWalnut(woodTex) {
     t.generateMipmaps = true;
     t.minFilter = THREE.LinearMipmapLinearFilter;
     t.magFilter = THREE.LinearFilter;
-    t.anisotropy = 16;
+    t.anisotropy = anisotropy;
     t.needsUpdate = true;
   });
 }
@@ -151,7 +151,7 @@ function makeFallbackTexture(title) {
   return new THREE.CanvasTexture(canvas);
 }
 
-function ArtworkFrame({ artwork, interactive = true, onSelect, onHoverChange }) {
+function ArtworkFrame({ artwork, interactive = true, onSelect, onHoverChange, quality = QUALITY_TIERS.high }) {
   const {
     id,
     title = 'Untitled',
@@ -159,6 +159,7 @@ function ArtworkFrame({ artwork, interactive = true, onSelect, onHoverChange }) 
     year = '',
     medium = 'Mixed Media',
     imageUrl = '',
+    imageUrlSm = null,
     position = [0, 1.55, 0],
     rotation = [0, 0, 0],
     width = 1.2,
@@ -185,7 +186,7 @@ function ArtworkFrame({ artwork, interactive = true, onSelect, onHoverChange }) 
 
   // Walnut PBR set (CC0 Poly Haven) — cached across all frames by drei
   const woodTex = useTexture(WALNUT_URLS);
-  useLayoutEffect(() => prepareWalnut(woodTex), [woodTex]);
+  useLayoutEffect(() => prepareWalnut(woodTex, quality.anisotropy), [woodTex, quality.anisotropy]);
 
   // Moulding ring geometries (openings reveal the canvas; each layer tucks under the previous)
   const frameGeos = useMemo(
@@ -239,9 +240,14 @@ function ArtworkFrame({ artwork, interactive = true, onSelect, onHoverChange }) 
 
   const { gl } = useThree();
   const maxAniso = useMemo(() => gl?.capabilities?.getMaxAnisotropy?.() ?? 8, [gl]);
+  const anisotropy = Math.min(maxAniso, quality.anisotropy);
+  const maxTextureSide = quality.maxTextureSide;
+
+  // Low tiers take the server's 1024px WebP when the upload produced one
+  const textureUrl = maxTextureSide <= 1024 && imageUrlSm ? imageUrlSm : imageUrl;
 
   // Asynchronously fetch the image outside Suspense so a failure can't throw.
-  // Oversized uploads are downscaled to MAX_TEX_SIDE before hitting the GPU —
+  // Oversized images are downscaled to the tier's texture cap before hitting the GPU —
   // a 4000px JPEG spread over one square metre of wall is pure bandwidth waste.
   useEffect(() => {
     let active = true;
@@ -252,22 +258,22 @@ function ArtworkFrame({ artwork, interactive = true, onSelect, onHoverChange }) 
       tex.generateMipmaps = true;
       tex.minFilter = THREE.LinearMipmapLinearFilter;
       tex.magFilter = THREE.LinearFilter;
-      tex.anisotropy = maxAniso;
+      tex.anisotropy = anisotropy;
       texture = tex;
-      setLoaded({ url: imageUrl, texture: tex });
+      setLoaded({ url: textureUrl, texture: tex });
     };
 
     const loader = new THREE.TextureLoader();
     loader.crossOrigin = 'anonymous';
     loader.load(
-      imageUrl,
+      textureUrl,
       (tex) => {
         if (!active) {
           tex.dispose();
           return;
         }
         const img = tex.image;
-        const scale = img ? Math.min(1, MAX_TEX_SIDE / Math.max(img.width, img.height)) : 1;
+        const scale = img ? Math.min(1, maxTextureSide / Math.max(img.width, img.height)) : 1;
         if (scale >= 1) {
           applyTexture(tex);
           return;
@@ -282,7 +288,7 @@ function ArtworkFrame({ artwork, interactive = true, onSelect, onHoverChange }) 
       undefined,
       (err) => {
         console.warn(`Could not load image texture for "${title}" asynchronously:`, err);
-        if (active) setLoaded({ url: imageUrl, failed: true });
+        if (active) setLoaded({ url: textureUrl, failed: true });
       }
     );
 
@@ -291,9 +297,9 @@ function ArtworkFrame({ artwork, interactive = true, onSelect, onHoverChange }) 
       active = false;
       texture?.dispose();
     };
-  }, [imageUrl, title, maxAniso]);
+  }, [textureUrl, title, anisotropy, maxTextureSide]);
 
-  const isCurrent = loaded?.url === imageUrl;
+  const isCurrent = loaded?.url === textureUrl;
   const failed = isCurrent && loaded.failed;
   const fallbackTexture = useMemo(() => (failed ? makeFallbackTexture(title) : null), [failed, title]);
   useEffect(() => () => fallbackTexture?.dispose(), [fallbackTexture]);
@@ -415,6 +421,7 @@ function ArtworkFrame({ artwork, interactive = true, onSelect, onHoverChange }) 
             width={safeW}
             centerY={safePos[1]}
             onHoverChange={interactive ? handlePlaqueHover : undefined}
+            anisotropy={anisotropy}
           />
         </AimTargets>
       </group>

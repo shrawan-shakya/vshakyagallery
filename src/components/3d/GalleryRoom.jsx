@@ -8,6 +8,7 @@ import AimTargets from './AimTargets';
 import { ROOM_H } from '../../constants';
 import { buildMiteredLoopGeometry } from '../../utils/moulding';
 import { getHallLayout } from '../../utils/hallLayouts';
+import { QUALITY_TIERS } from '../../utils/quality';
 
 // Initialize RectAreaLight shader support in Three.js WebGLRenderer
 if (typeof window !== 'undefined') {
@@ -359,7 +360,7 @@ function FrameTrack() {
 // ---------------------------------------------------------------------------
 // Room
 // ---------------------------------------------------------------------------
-function GalleryRoom({ wallColor = '#ffffff', hallLayout = 'classic' }) {
+function GalleryRoom({ wallColor = '#ffffff', hallLayout = 'classic', quality = QUALITY_TIERS.high }) {
   const hall = useMemo(() => getHallLayout(hallLayout), [hallLayout]);
   const lp = hall.lightingPlan;
 
@@ -443,10 +444,10 @@ function GalleryRoom({ wallColor = '#ffffff', hallLayout = 'classic' }) {
       </AimTargets>
 
       {/* Traditional Nepalese hand-knotted wool carpets — procedural */}
-      <NepaleseCarpet position={[0, 0.001, -4.0]} size={[4.2, 2.8]} variant="mandala" />
-      <NepaleseCarpet position={[0, 0.001, 5.5]} size={[4.4, 2.4]} variant="mandala" />
-      <NepaleseCarpet position={[-5.2, 0.001, -1.0]} size={[3.2, 2.2]} variant="royal_dragon" />
-      <NepaleseCarpet position={[5.2, 0.001, -1.0]} size={[3.2, 2.2]} variant="royal_dragon" />
+      <NepaleseCarpet position={[0, 0.001, -4.0]} size={[4.2, 2.8]} variant="mandala" fringeThreads={quality.fringeThreads} />
+      <NepaleseCarpet position={[0, 0.001, 5.5]} size={[4.4, 2.4]} variant="mandala" fringeThreads={quality.fringeThreads} />
+      <NepaleseCarpet position={[-5.2, 0.001, -1.0]} size={[3.2, 2.2]} variant="royal_dragon" fringeThreads={quality.fringeThreads} />
+      <NepaleseCarpet position={[5.2, 0.001, -1.0]} size={[3.2, 2.2]} variant="royal_dragon" fringeThreads={quality.fringeThreads} />
 
       {/* 5. CEILING */}
       <mesh rotation={[Math.PI / 2, 0, 0]} position={[0, ROOM_H, 0]}>
@@ -529,9 +530,8 @@ function GalleryRoom({ wallColor = '#ffffff', hallLayout = 'classic' }) {
           <TubeLight key={`tube-${x}-${z}`} position={[x, ROOM_H - 0.06, z]} length={lp.tubeLength} />
         ))
       )}
-      {lp.tubeRows.map((z) => (
-        <TubeRowLight key={`tube-row-${z}`} z={z} span={tubeSpan} />
-      ))}
+      {quality.rectAreaLights &&
+        lp.tubeRows.map((z) => <TubeRowLight key={`tube-row-${z}`} z={z} span={tubeSpan} />)}
 
       {/* Concealed cove lighting — Chronological Loop soffit bounce */}
       {lp.cove && <CoveStrips />}

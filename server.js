@@ -7,7 +7,7 @@ import fs from 'fs';
 import crypto from 'crypto';
 import rateLimit from 'express-rate-limit';
 import { fileURLToPath } from 'url';
-import sizeOf from 'image-size';
+import sharp from 'sharp';
 import { put } from '@vercel/blob';
 import { IN } from './src/constants.js';
 import { seedArtworks } from './src/data/artworks.js';
@@ -134,6 +134,7 @@ function toArtworkDTO(row) {
     description: row.description,
     audioText: row.audio_text,
     imageUrl: row.image_url,
+    imageUrlSm: row.image_url_sm,
     widthIn: row.width_in,
     heightIn: row.height_in,
     width: row.width_in * IN,
@@ -239,7 +240,14 @@ if (countArtists.count === 0) {
 // legacy artwork hanging layouts.
 try {
   db.prepare("ALTER TABLE rooms ADD COLUMN hall_layout TEXT NOT NULL DEFAULT 'classic'").run();
-} catch (e) {
+} catch {
+  // Column already exists
+}
+
+// Small (1024px) WebP variant of each upload for low-end GPUs and thumbnails
+try {
+  db.prepare('ALTER TABLE artworks ADD COLUMN image_url_sm TEXT').run();
+} catch {
   // Column already exists
 }
 
@@ -306,32 +314,64 @@ const upload = multer({
   fileFilter: (req, file, cb) => cb(null, IMAGE_MIME_TYPES.has(file.mimetype)),
 });
 
-// Helper function to upload image file to Vercel Blob (or fallback to local /uploads URL)
-async function uploadImageToBlobOrLocal(file) {
-  if (!file) return null;
-  let imageUrl = `/uploads/${file.filename}`;
+// ---------------- IMAGE PIPELINE ----------------
+// Every upload is re-encoded to WebP at two sizes: the frame texture cap (2048px)
+// and a small variant (1024px) for low-end GPUs, admin thumbnails and the plaque
+// header. The original is discarded once both exist.
+const IMAGE_VARIANTS = [
+  { key: 'imageUrl', suffix: '', maxSide: 2048 },
+  { key: 'imageUrlSm', suffix: '-sm', maxSide: 1024 },
+];
 
+// Persist one processed file: Vercel Blob when configured, else the local /uploads URL
+async function storeImage(localPath, filename, contentType) {
   const token = process.env.BLOB_READ_WRITE_TOKEN;
-  if (token || isVercel) {
-    try {
-      const fileBuffer = fs.readFileSync(file.path);
-      const options = {
-        access: 'public',
-        contentType: file.mimetype || 'image/jpeg',
-      };
-      if (token) options.token = token;
-
-      const blob = await put(file.filename, fileBuffer, options);
-      if (blob && blob.url) {
-        imageUrl = blob.url;
-        try { fs.unlinkSync(file.path); } catch { /* ignore */ }
-      }
-    } catch (blobErr) {
-      console.warn('⚠️ Vercel Blob notice (falling back to local URL):', blobErr.message);
+  if (!token && !isVercel) return `/uploads/${filename}`;
+  try {
+    const options = { access: 'public', contentType };
+    if (token) options.token = token;
+    const blob = await put(filename, fs.readFileSync(localPath), options);
+    if (blob?.url) {
+      try { fs.unlinkSync(localPath); } catch { /* ignore */ }
+      return blob.url;
     }
+  } catch (blobErr) {
+    console.warn('⚠️ Vercel Blob notice (falling back to local URL):', blobErr.message);
   }
+  return `/uploads/${filename}`;
+}
 
-  return imageUrl;
+// Multer's temp file -> { imageUrl, imageUrlSm, width, height }
+async function processUpload(file) {
+  const meta = await sharp(file.path).metadata();
+  const base = path.parse(file.filename).name;
+  const result = { width: meta.width, height: meta.height };
+  for (const variant of IMAGE_VARIANTS) {
+    const filename = `${base}${variant.suffix}.webp`;
+    const outPath = path.join(uploadsDir, filename);
+    await sharp(file.path)
+      .rotate() // honour EXIF orientation
+      .resize({ width: variant.maxSide, height: variant.maxSide, fit: 'inside', withoutEnlargement: true })
+      .webp({ quality: 82 })
+      .toFile(outPath);
+    result[variant.key] = await storeImage(outPath, filename, 'image/webp');
+  }
+  try { fs.unlinkSync(file.path); } catch { /* ignore */ }
+  return result;
+}
+
+// Hanging size when the curator gave none: 40in tall, width from the pixel aspect
+function inchesFromAspect({ width, height }) {
+  if (!width || !height) return { widthIn: 48, heightIn: 36 };
+  return { widthIn: Math.round(40 * (width / height)), heightIn: 40 };
+}
+
+// Delete locally stored variants; blob URLs are left alone
+function removeLocalImages(...urls) {
+  for (const url of urls) {
+    if (!url || !url.startsWith('/uploads/')) continue;
+    try { fs.unlinkSync(path.join(uploadsDir, path.basename(url))); } catch { /* already gone */ }
+  }
 }
 
 // ---------------- RATE LIMITING ----------------
@@ -556,15 +596,8 @@ app.delete('/api/rooms/:id', writeLimiter, requireAdmin, (req, res) => {
     }
 
     // Remove uploaded image files belonging to this room's artworks
-    const arts = db.prepare('SELECT image_url FROM artworks WHERE room_id = ?').all(id);
-    for (const art of arts) {
-      if (art.image_url && art.image_url.startsWith('/uploads/')) {
-        const filePath = path.join(__dirname, 'public', art.image_url);
-        if (fs.existsSync(filePath)) {
-          try { fs.unlinkSync(filePath); } catch (e) { /* ignore */ }
-        }
-      }
-    }
+    const arts = db.prepare('SELECT image_url, image_url_sm FROM artworks WHERE room_id = ?').all(id);
+    for (const art of arts) removeLocalImages(art.image_url, art.image_url_sm);
 
     // Artworks cascade via foreign keys
     db.prepare('DELETE FROM rooms WHERE id = ?').run(id);
@@ -617,20 +650,14 @@ app.post('/api/artworks/upload', writeLimiter, requireAdmin, upload.single('imag
       return res.status(400).json({ error: 'Title, Artist, and Room are required fields.' });
     }
 
+    // WebP variants + pixel size (processed before anything is written to the DB)
+    const image = await processUpload(req.file);
+
     // Determine dimensions (fallback to image aspect ratio if widthIn/heightIn missing)
     let finalWidthIn = parseFloat(widthIn);
     let finalHeightIn = parseFloat(heightIn);
-
     if (isNaN(finalWidthIn) || isNaN(finalHeightIn) || finalWidthIn <= 0 || finalHeightIn <= 0) {
-      try {
-        const dimensions = sizeOf(req.file.path);
-        const aspect = dimensions.width / dimensions.height;
-        finalHeightIn = 40; // Default height 40 inches
-        finalWidthIn = Math.round(40 * aspect);
-      } catch (e) {
-        finalWidthIn = 48;
-        finalHeightIn = 36;
-      }
+      ({ widthIn: finalWidthIn, heightIn: finalHeightIn } = inchesFromAspect(image));
     }
 
     // Calculate wall position coordinates (use custom values if supplied, otherwise calculate wall slot)
@@ -653,12 +680,11 @@ app.post('/api/artworks/upload', writeLimiter, requireAdmin, upload.single('imag
     }
 
     const id = 'artwork-' + Date.now();
-    const imageUrl = (await uploadImageToBlobOrLocal(req.file)) || `/uploads/${req.file.filename}`;
     const audioText = `${title} by ${artist}${year ? `, ${year}` : ''}. ${medium ? `${medium}. ` : ''}${description || ''}`;
 
     db.prepare(`
-      INSERT INTO artworks (id, room_id, artist_id, title, artist, year, medium, description, audio_text, image_url, width_in, height_in, wall_id, pos_x, pos_y, pos_z, rot_y)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO artworks (id, room_id, artist_id, title, artist, year, medium, description, audio_text, image_url, image_url_sm, width_in, height_in, wall_id, pos_x, pos_y, pos_z, rot_y)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       id,
       roomId,
@@ -669,7 +695,8 @@ app.post('/api/artworks/upload', writeLimiter, requireAdmin, upload.single('imag
       medium || 'Mixed Media',
       description || '',
       audioText,
-      imageUrl,
+      image.imageUrl,
+      image.imageUrlSm,
       finalWidthIn,
       finalHeightIn,
       wall,
@@ -719,27 +746,18 @@ app.put('/api/artworks/:id', writeLimiter, requireAdmin, upload.single('image'),
     let finalHeightIn = parseFloat(heightIn) || (existing ? existing.height_in : 36);
 
     let imageUrl = existing ? existing.image_url : '/artworks/starry-horizon.jpg';
+    let imageUrlSm = existing ? existing.image_url_sm : null;
 
-    // If new image file is uploaded, update imageUrl and delete old file if in /uploads/
+    // A replacement image: re-encode it, then drop the previous local files
     if (req.file) {
-      if (existing && existing.image_url && existing.image_url.startsWith('/uploads/')) {
-        const oldPath = path.join(__dirname, 'public', existing.image_url);
-        if (fs.existsSync(oldPath)) {
-          try { fs.unlinkSync(oldPath); } catch (e) { /* ignore */ }
-        }
-      }
-      imageUrl = (await uploadImageToBlobOrLocal(req.file)) || `/uploads/${req.file.filename}`;
+      const image = await processUpload(req.file);
+      if (existing) removeLocalImages(existing.image_url, existing.image_url_sm);
+      imageUrl = image.imageUrl;
+      imageUrlSm = image.imageUrlSm;
 
-      // Recalculate dimensions from new image aspect ratio if width/height not explicitly supplied
+      // Recalculate dimensions from the new aspect ratio if width/height not explicitly supplied
       if (isNaN(parseFloat(widthIn)) || isNaN(parseFloat(heightIn))) {
-        try {
-          const dimensions = sizeOf(req.file.path);
-          const aspect = dimensions.width / dimensions.height;
-          finalHeightIn = 40;
-          finalWidthIn = Math.round(40 * aspect);
-        } catch {
-          /* keep previous */
-        }
+        ({ widthIn: finalWidthIn, heightIn: finalHeightIn } = inchesFromAspect(image));
       }
     }
 
@@ -765,18 +783,18 @@ app.put('/api/artworks/:id', writeLimiter, requireAdmin, upload.single('image'),
 
     if (!existing) {
       db.prepare(`
-        INSERT INTO artworks (id, room_id, artist_id, title, artist, year, medium, description, audio_text, image_url, width_in, height_in, wall_id, pos_x, pos_y, pos_z, rot_y)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO artworks (id, room_id, artist_id, title, artist, year, medium, description, audio_text, image_url, image_url_sm, width_in, height_in, wall_id, pos_x, pos_y, pos_z, rot_y)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `).run(
-        id, newRoomId, newArtistId, newTitle, newArtist, newYear, newMedium, newDesc, audioText, imageUrl, finalWidthIn, finalHeightIn, newWallId, posX, posY, posZ, rotY
+        id, newRoomId, newArtistId, newTitle, newArtist, newYear, newMedium, newDesc, audioText, imageUrl, imageUrlSm, finalWidthIn, finalHeightIn, newWallId, posX, posY, posZ, rotY
       );
     } else {
       db.prepare(`
         UPDATE artworks 
-        SET room_id = ?, artist_id = ?, title = ?, artist = ?, year = ?, medium = ?, description = ?, audio_text = ?, image_url = ?, width_in = ?, height_in = ?, wall_id = ?, pos_x = ?, pos_y = ?, pos_z = ?, rot_y = ?
+        SET room_id = ?, artist_id = ?, title = ?, artist = ?, year = ?, medium = ?, description = ?, audio_text = ?, image_url = ?, image_url_sm = ?, width_in = ?, height_in = ?, wall_id = ?, pos_x = ?, pos_y = ?, pos_z = ?, rot_y = ?
         WHERE id = ?
       `).run(
-        newRoomId, newArtistId, newTitle, newArtist, newYear, newMedium, newDesc, audioText, imageUrl, finalWidthIn, finalHeightIn, newWallId, posX, posY, posZ, rotY, id
+        newRoomId, newArtistId, newTitle, newArtist, newYear, newMedium, newDesc, audioText, imageUrl, imageUrlSm, finalWidthIn, finalHeightIn, newWallId, posX, posY, posZ, rotY, id
       );
     }
 
@@ -795,13 +813,7 @@ app.delete('/api/artworks/:id', writeLimiter, requireAdmin, (req, res) => {
     const art = db.prepare('SELECT * FROM artworks WHERE id = ?').get(id);
     if (!art) return res.status(404).json({ error: 'Artwork not found' });
 
-    // Delete image file if it is in /uploads/
-    if (art.image_url && art.image_url.startsWith('/uploads/')) {
-      const filePath = path.join(__dirname, 'public', art.image_url);
-      if (fs.existsSync(filePath)) {
-        try { fs.unlinkSync(filePath); } catch (e) { /* ignore */ }
-      }
-    }
+    removeLocalImages(art.image_url, art.image_url_sm);
 
     db.prepare('DELETE FROM artworks WHERE id = ?').run(id);
     res.json({ success: true, id });
