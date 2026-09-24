@@ -814,12 +814,20 @@ app.put('/api/artworks/:id', writeLimiter, requireAdmin, handleUpload('image'), 
       }
     }
 
-    // Calculate wall position coordinates (use custom values if supplied, otherwise calculate wall slot)
+    // Calculate wall position coordinates (use custom values if supplied, otherwise preserve existing or calculate wall slot)
     const posYExplicit = req.body.posY !== undefined && !isNaN(parseFloat(req.body.posY));
     let posY = posYExplicit ? parseFloat(req.body.posY) : (existing ? existing.pos_y : ART_HANG_CENTER);
-    let posX = req.body.posX !== undefined && !isNaN(parseFloat(req.body.posX)) ? parseFloat(req.body.posX) : null;
-    let posZ = req.body.posZ !== undefined && !isNaN(parseFloat(req.body.posZ)) ? parseFloat(req.body.posZ) : null;
-    let rotY = req.body.rotY !== undefined && !isNaN(parseFloat(req.body.rotY)) ? parseFloat(req.body.rotY) : null;
+    
+    const isSameWall = existing && (!wallId || wallId === existing.wall_id);
+    let posX = req.body.posX !== undefined && !isNaN(parseFloat(req.body.posX)) 
+      ? parseFloat(req.body.posX) 
+      : (isSameWall ? existing.pos_x : null);
+    let posZ = req.body.posZ !== undefined && !isNaN(parseFloat(req.body.posZ)) 
+      ? parseFloat(req.body.posZ) 
+      : (isSameWall ? existing.pos_z : null);
+    let rotY = req.body.rotY !== undefined && !isNaN(parseFloat(req.body.rotY)) 
+      ? parseFloat(req.body.rotY) 
+      : (isSameWall ? existing.rot_y : null);
 
     if (posX === null || posZ === null || rotY === null) {
       // Center-out slotting per the room's hall layout architecture

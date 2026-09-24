@@ -23,6 +23,7 @@ import {
 } from 'lucide-react';
 import { getHallOptions, getWallConfigs } from '../../utils/hallLayouts';
 import { ART_HANG_CENTER } from '../../constants';
+import { saveLocalArtworkOverride, removeLocalArtworkOverride } from '../../data/artworks';
 
 const HEIGHT_PRESETS = [
   { id: 'low', label: 'Low (1.4m)', height: 1.4, icon: ArrowDown },
@@ -269,7 +270,21 @@ export default function AdminModal({
     const selectedFile = e.target.files[0];
     if (selectedFile) {
       setFile(selectedFile);
-      setPreviewUrl(URL.createObjectURL(selectedFile));
+      const url = URL.createObjectURL(selectedFile);
+      setPreviewUrl(url);
+
+      // Auto-detect image aspect ratio to propose accurate physical hanging dimensions
+      const img = new Image();
+      img.onload = () => {
+        if (img.naturalWidth && img.naturalHeight) {
+          const aspect = img.naturalWidth / img.naturalHeight;
+          const proposedH = 40;
+          const proposedW = Math.round(proposedH * aspect);
+          setWidthIn(proposedW.toString());
+          setHeightIn(proposedH.toString());
+        }
+      };
+      img.src = url;
     }
   };
 
@@ -307,9 +322,9 @@ export default function AdminModal({
       setCustomHeightNum(h);
     } else {
       const wallPresets = presetsForWall(art.wallId || selectedWallId || 'back', targetHallId);
-      setSelectedSlot(wallPresets[0].id);
+      setSelectedSlot(wallPresets[0]?.id || null);
       setSelectedHeight('eye');
-      setCustomOffsetNum(wallPresets[0].offset);
+      setCustomOffsetNum(wallPresets[0]?.offset || 0);
       setCustomHeightNum(ART_HANG_CENTER);
     }
 
@@ -326,10 +341,12 @@ export default function AdminModal({
     setTitle('');
     setArtist('');
     setDescription('');
+    setWidthIn('48');
+    setHeightIn('36');
     const wallPresets = presetsForWall(selectedWallId || 'back', targetHallId);
-    setSelectedSlot(wallPresets[0].id);
+    setSelectedSlot(wallPresets[0]?.id || null);
     setSelectedHeight('eye');
-    setCustomOffsetNum(wallPresets[0].offset);
+    setCustomOffsetNum(wallPresets[0]?.offset || 0);
     setCustomHeightNum(ART_HANG_CENTER);
     setShowAdvancedPlacement(false);
     setStatusMsg(null);
@@ -399,8 +416,13 @@ export default function AdminModal({
       });
 
       if (!res.ok) {
-        const errData = await res.json();
+        const errData = await res.json().catch(() => ({}));
         throw new Error(errData.error || 'Operation failed');
+      }
+
+      const savedArt = await res.json().catch(() => null);
+      if (savedArt && savedArt.id) {
+        saveLocalArtworkOverride(savedArt);
       }
 
       const isEdit = !!editingArtwork;
@@ -410,7 +432,7 @@ export default function AdminModal({
       
       handleCancelEdit();
       setStatusMsg({ type: 'success', text: successMsg });
-      setActiveTab('list');
+      setActiveTab('manage');
       onRefreshData?.();
     } catch (err) {
       console.error("Save artwork error:", err);
@@ -515,6 +537,7 @@ export default function AdminModal({
     try {
       const res = await adminFetch(`/api/artworks/${id}`, { method: 'DELETE' });
       if (!res.ok) throw new Error('Failed to delete artwork');
+      removeLocalArtworkOverride(id);
       setStatusMsg({ type: 'success', text: `Removed "${artTitle}".` });
       if (editingArtwork?.id === id) handleCancelEdit();
       onRefreshData?.();
