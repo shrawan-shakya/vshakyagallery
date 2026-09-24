@@ -101,6 +101,7 @@ export default function AdminModal({
   // Upload / Edit Artwork Form State
   const [file, setFile] = useState(null);
   const [previewUrl, setPreviewUrl] = useState(null);
+  const [fileDataUrl, setFileDataUrl] = useState(null);
   const [title, setTitle] = useState('');
   const [artist, setArtist] = useState('');
   const [year, setYear] = useState(new Date().getFullYear().toString());
@@ -273,6 +274,12 @@ export default function AdminModal({
       const url = URL.createObjectURL(selectedFile);
       setPreviewUrl(url);
 
+      const reader = new FileReader();
+      reader.onload = (rev) => {
+        setFileDataUrl(rev.target?.result || null);
+      };
+      reader.readAsDataURL(selectedFile);
+
       // Auto-detect image aspect ratio to propose accurate physical hanging dimensions
       const img = new Image();
       img.onload = () => {
@@ -330,6 +337,7 @@ export default function AdminModal({
 
     setFile(null);
     setPreviewUrl(art.imageUrl || null);
+    setFileDataUrl(art.localDataUrl || null);
     setStatusMsg(null);
     setActiveTab('upload');
   };
@@ -338,6 +346,7 @@ export default function AdminModal({
     setEditingArtwork(null);
     setFile(null);
     setPreviewUrl(null);
+    setFileDataUrl(null);
     setTitle('');
     setArtist('');
     setDescription('');
@@ -422,7 +431,10 @@ export default function AdminModal({
 
       const savedArt = await res.json().catch(() => null);
       if (savedArt && savedArt.id) {
-        saveLocalArtworkOverride(savedArt);
+        saveLocalArtworkOverride({
+          ...savedArt,
+          localDataUrl: fileDataUrl || null,
+        });
       }
 
       const isEdit = !!editingArtwork;
@@ -707,7 +719,7 @@ export default function AdminModal({
                   />
                   {previewUrl ? (
                     <div className="flex flex-col items-center gap-2">
-                      <img src={previewUrl} alt="Preview" className="h-32 object-contain rounded-none border border-white/10" />
+                      <img src={previewUrl} crossOrigin="anonymous" alt="Preview" className="h-32 object-contain rounded-none border border-white/10" />
                       <span className="text-xs text-[#D4AF37] font-mono">
                         {file ? file.name : 'Current Image (click to replace)'}
                       </span>
@@ -1246,7 +1258,7 @@ export default function AdminModal({
                 artworks.map((art) => (
                   <div key={art.id} className="flex items-center justify-between p-3 bg-[#181818] border border-white/10">
                     <div className="flex items-center gap-3">
-                      <img src={art.imageUrlSm || art.imageUrl} alt={art.title} className="w-12 h-12 object-cover rounded-none border border-white/10" />
+                      <img src={art.localDataUrl || art.imageUrlSm || art.imageUrl} crossOrigin="anonymous" alt={art.title} className="w-12 h-12 object-cover rounded-none border border-white/10" />
                       <div>
                         <h4 className="text-xs font-bold text-[#FAFAFA]">{art.title}</h4>
                         <p className="text-[10px] text-slate-400">{art.artist} • {art.widthIn}″ × {art.heightIn}″ • Wall: {art.wallId}</p>

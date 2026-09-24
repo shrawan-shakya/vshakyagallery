@@ -101,8 +101,19 @@ if (!fs.existsSync(uploadsDir)) {
   fs.mkdirSync(uploadsDir, { recursive: true });
 }
 
-// Serve uploaded files statically
-app.use('/uploads', express.static(uploadsDir));
+// Serve uploaded files statically with explicit CORS and caching headers
+const staticUploadOptions = {
+  setHeaders: (res) => {
+    res.set('Access-Control-Allow-Origin', '*');
+    res.set('Cross-Origin-Resource-Policy', 'cross-origin');
+    res.set('Cache-Control', 'public, max-age=31536000, immutable');
+  },
+};
+const bundledUploadsDir = path.join(__dirname, 'public', 'uploads');
+if (fs.existsSync(bundledUploadsDir)) {
+  app.use('/uploads', express.static(bundledUploadsDir, staticUploadOptions));
+}
+app.use('/uploads', express.static(uploadsDir, staticUploadOptions));
 
 // Initialize SQLite database (copy seed db to /tmp on Vercel)
 const dbPath = isVercel ? path.join('/tmp', 'gallery.db') : path.join(__dirname, 'gallery.db');

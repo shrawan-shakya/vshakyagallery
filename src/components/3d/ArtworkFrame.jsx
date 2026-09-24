@@ -243,12 +243,11 @@ function ArtworkFrame({ artwork, interactive = true, onSelect, onHoverChange, qu
   const anisotropy = Math.min(maxAniso, quality.anisotropy);
   const maxTextureSide = quality.maxTextureSide;
 
-  // Low tiers take the server's 1024px WebP when the upload produced one
-  const textureUrl = maxTextureSide <= 1024 && imageUrlSm ? imageUrlSm : imageUrl;
+  // Priority: localDataUrl (curator upload cache) > (low tiers: imageUrlSm) > imageUrl
+  const effectiveUrl = artwork?.localDataUrl || (maxTextureSide <= 1024 && imageUrlSm ? imageUrlSm : imageUrl);
 
   // Asynchronously fetch the image outside Suspense so a failure can't throw.
-  // Oversized images are downscaled to the tier's texture cap before hitting the GPU —
-  // a 4000px JPEG spread over one square metre of wall is pure bandwidth waste.
+  // Oversized images are downscaled to the tier's texture cap before hitting the GPU.
   useEffect(() => {
     let active = true;
     let texture = null;
@@ -260,46 +259,63 @@ function ArtworkFrame({ artwork, interactive = true, onSelect, onHoverChange, qu
       tex.magFilter = THREE.LinearFilter;
       tex.anisotropy = anisotropy;
       texture = tex;
-      setLoaded({ url: textureUrl, texture: tex });
+      setLoaded({ url: effectiveUrl, texture: tex });
     };
 
     const loader = new THREE.TextureLoader();
-    loader.crossOrigin = 'anonymous';
-    loader.load(
-      textureUrl,
-      (tex) => {
-        if (!active) {
-          tex.dispose();
-          return;
+    if (!effectiveUrl.startsWith('data:')) {
+      loader.crossOrigin = 'anonymous';
+    }
+
+    const tryLoad = (urlToLoad, isRetry = false) => {
+      loader.load(
+        urlToLoad,
+        (tex) => {
+          if (!active) {
+            tex.dispose();
+            return;
+          }
+          const img = tex.image;
+          const scale = img ? Math.min(1, maxTextureSide / Math.max(img.width, img.height)) : 1;
+          if (scale >= 1) {
+            applyTexture(tex);
+            return;
+          }
+          try {
+            const c = document.createElement('canvas');
+            c.width = Math.max(1, Math.round(img.width * scale));
+            c.height = Math.max(1, Math.round(img.height * scale));
+            c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+            tex.dispose();
+            applyTexture(new THREE.CanvasTexture(c));
+          } catch {
+            // If canvas downscaling fails (CORS / security restrictions), render the original texture directly
+            applyTexture(tex);
+          }
+        },
+        undefined,
+        (err) => {
+          console.warn(`Could not load image texture for "${title}" from ${urlToLoad}:`, err);
+          // If the thumbnail variant failed, retry once with the full-size image URL
+          if (!isRetry && urlToLoad === imageUrlSm && imageUrl && imageUrl !== imageUrlSm) {
+            tryLoad(imageUrl, true);
+            return;
+          }
+          if (active) setLoaded({ url: effectiveUrl, failed: true });
         }
-        const img = tex.image;
-        const scale = img ? Math.min(1, maxTextureSide / Math.max(img.width, img.height)) : 1;
-        if (scale >= 1) {
-          applyTexture(tex);
-          return;
-        }
-        const c = document.createElement('canvas');
-        c.width = Math.max(1, Math.round(img.width * scale));
-        c.height = Math.max(1, Math.round(img.height * scale));
-        c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
-        tex.dispose();
-        applyTexture(new THREE.CanvasTexture(c));
-      },
-      undefined,
-      (err) => {
-        console.warn(`Could not load image texture for "${title}" asynchronously:`, err);
-        if (active) setLoaded({ url: textureUrl, failed: true });
-      }
-    );
+      );
+    };
+
+    tryLoad(effectiveUrl);
 
     // Free the GPU copy when the image changes or the frame leaves the room
     return () => {
       active = false;
       texture?.dispose();
     };
-  }, [textureUrl, title, anisotropy, maxTextureSide]);
+  }, [effectiveUrl, imageUrl, imageUrlSm, title, anisotropy, maxTextureSide]);
 
-  const isCurrent = loaded?.url === textureUrl;
+  const isCurrent = loaded?.url === effectiveUrl;
   const failed = isCurrent && loaded.failed;
   const fallbackTexture = useMemo(() => (failed ? makeFallbackTexture(title) : null), [failed, title]);
   useEffect(() => () => fallbackTexture?.dispose(), [fallbackTexture]);

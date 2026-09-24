@@ -66,7 +66,8 @@ export default function ArtworkModal({ artwork, onClose }) {
       {/* 1. HEADER IMAGE (mounted plate with hairline gold rule beneath) */}
       <div className="relative h-44 w-full shrink-0 overflow-hidden bg-[#E9E3D4] border-b border-[#D4AF37]/30">
         <img
-          src={artwork.imageUrlSm || artwork.imageUrl}
+          src={artwork.localDataUrl || artwork.imageUrlSm || artwork.imageUrl}
+          crossOrigin="anonymous"
           alt={artwork.title}
           className="w-full h-full object-cover"
         />

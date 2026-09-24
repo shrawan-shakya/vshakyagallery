@@ -257,6 +257,24 @@ export const seedArtworks = [
     widthIn: 25,
     heightIn: 58,
   },
+  {
+    id: 'artwork-1790262470466',
+    roomId: 'room-main',
+    artistId: 'artist-group',
+    title: 'Preserve the Nature',
+    artist: 'Asha Dangol',
+    year: '2025',
+    medium: 'Acrylic on Canvas',
+    description: 'An evocative masterpiece exploring harmony between ecology and humanity by Asha Dangol.',
+    audioText: 'Preserve the Nature by Asha Dangol, 2025. Acrylic on Canvas.',
+    imageUrl: '/uploads/artwork-1790262470049-841153670.webp',
+    imageUrlSm: '/uploads/artwork-1790262470049-841153670-sm.webp',
+    wallId: 'partition_front',
+    position: [0, 2.2, 2.2],
+    rotation: [0, 0, 0],
+    widthIn: 48,
+    heightIn: 84,
+  },
 ];
 
 export const fallbackArtworks = seedArtworks.map((art) => ({
