@@ -7,7 +7,7 @@
 export const ROOM_H = 6; // Ceiling height (m)
 export const ROOM_W = 20; // Square floor side length (m)
 export const WALL_INNER_FACE = 9.9; // Inner wall plane (walls are ±10 center, 0.2 thick)
-export const ART_HANG_CENTER = 1.55; // Museum-standard artwork centerline height (m)
+export const ART_HANG_CENTER = 1.8; // Artwork centerline height (m), elevated for floor clearance
 
 // Artwork display scale multiplier for the 3D gallery.
 // Makes artworks (including 15"x22" pieces) visually commanding in the 20m x 20m hall

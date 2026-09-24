@@ -9,7 +9,7 @@ import rateLimit from 'express-rate-limit';
 import { fileURLToPath } from 'url';
 import sharp from 'sharp';
 import { put } from '@vercel/blob';
-import { IN } from './src/constants.js';
+import { IN, ART_HANG_CENTER } from './src/constants.js';
 import { seedArtworks } from './src/data/artworks.js';
 import {
   HALL_LAYOUT_IDS,
@@ -249,6 +249,13 @@ try {
   db.prepare('ALTER TABLE artworks ADD COLUMN image_url_sm TEXT').run();
 } catch {
   // Column already exists
+}
+
+// Migrate legacy 1.55m hanging height to the new elevated ART_HANG_CENTER
+try {
+  db.prepare('UPDATE artworks SET pos_y = ? WHERE ABS(pos_y - 1.55) < 0.01').run(ART_HANG_CENTER);
+} catch {
+  // Ignore
 }
 
 // Resolve a hall layout id from a request payload
@@ -663,7 +670,7 @@ app.post('/api/artworks/upload', writeLimiter, requireAdmin, upload.single('imag
     // Calculate wall position coordinates (use custom values if supplied, otherwise calculate wall slot)
     let wall = wallId || 'back';
     const posYExplicit = req.body.posY !== undefined && !isNaN(parseFloat(req.body.posY));
-    let posY = posYExplicit ? parseFloat(req.body.posY) : 1.55;
+    let posY = posYExplicit ? parseFloat(req.body.posY) : ART_HANG_CENTER;
     let posX = req.body.posX !== undefined && !isNaN(parseFloat(req.body.posX)) ? parseFloat(req.body.posX) : null;
     let posZ = req.body.posZ !== undefined && !isNaN(parseFloat(req.body.posZ)) ? parseFloat(req.body.posZ) : null;
     let rotY = req.body.rotY !== undefined && !isNaN(parseFloat(req.body.rotY)) ? parseFloat(req.body.rotY) : null;
@@ -763,7 +770,7 @@ app.put('/api/artworks/:id', writeLimiter, requireAdmin, upload.single('image'),
 
     // Calculate wall position coordinates (use custom values if supplied, otherwise calculate wall slot)
     const posYExplicit = req.body.posY !== undefined && !isNaN(parseFloat(req.body.posY));
-    let posY = posYExplicit ? parseFloat(req.body.posY) : (existing ? existing.pos_y : 1.55);
+    let posY = posYExplicit ? parseFloat(req.body.posY) : (existing ? existing.pos_y : ART_HANG_CENTER);
     let posX = req.body.posX !== undefined && !isNaN(parseFloat(req.body.posX)) ? parseFloat(req.body.posX) : null;
     let posZ = req.body.posZ !== undefined && !isNaN(parseFloat(req.body.posZ)) ? parseFloat(req.body.posZ) : null;
     let rotY = req.body.rotY !== undefined && !isNaN(parseFloat(req.body.rotY)) ? parseFloat(req.body.rotY) : null;

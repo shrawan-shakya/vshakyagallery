@@ -126,9 +126,9 @@ function DidacticLabel({ artworkId, title, artist, year, medium, width, centerY,
     onHoverChange?.(false);
   };
 
-  // Mounted beside the frame on the wall plane, label centre at ~1.52m
+  // Mounted beside the frame on the wall plane, label centre at ~1.62m
   const localX = width / 2 + 0.28 + PANEL_W / 2;
-  const localY = 1.52 - centerY;
+  const localY = 1.62 - centerY;
 
   return (
     <mesh

@@ -4,7 +4,7 @@ import { useThree } from '@react-three/fiber';
 import * as THREE from 'three';
 import DidacticLabel from './DidacticLabel';
 import AimTargets from './AimTargets';
-import { ROOM_H } from '../../constants';
+import { ROOM_H, ART_HANG_CENTER } from '../../constants';
 import { buildMiteredLoopGeometry } from '../../utils/moulding';
 import { QUALITY_TIERS } from '../../utils/quality';
 
@@ -160,13 +160,13 @@ function ArtworkFrame({ artwork, interactive = true, onSelect, onHoverChange, qu
     medium = 'Mixed Media',
     imageUrl = '',
     imageUrlSm = null,
-    position = [0, 1.55, 0],
+    position = [0, ART_HANG_CENTER, 0],
     rotation = [0, 0, 0],
     width = 1.2,
     height = 0.9
   } = artwork || {};
 
-  const safePos = useMemo(() => Array.isArray(position) && position.length === 3 ? position : [0, 1.55, 0], [position]);
+  const safePos = useMemo(() => Array.isArray(position) && position.length === 3 ? position : [0, ART_HANG_CENTER, 0], [position]);
   const safeRot = useMemo(() => Array.isArray(rotation) && rotation.length === 3 ? rotation : [0, 0, 0], [rotation]);
   const safeW = typeof width === 'number' && !isNaN(width) && width > 0 ? width : 1.2;
   const safeH = typeof height === 'number' && !isNaN(height) && height > 0 ? height : 0.9;
@@ -176,7 +176,7 @@ function ArtworkFrame({ artwork, interactive = true, onSelect, onHoverChange, qu
   // Focus light rig geometry: canopy on ceiling -> drop stem -> knuckle -> barrel aimed at canvas
   const rig = useMemo(() => {
     const mountZ = 0.9;
-    const posY = safePos[1] ?? 1.55;
+    const posY = safePos[1] ?? ART_HANG_CENTER;
     const ceilingY = ROOM_H - posY;
     const knuckleY = ROOM_H - 0.45 - posY;
     const dir = new THREE.Vector3(0, -knuckleY, -mountZ).normalize();

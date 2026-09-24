@@ -1,7 +1,7 @@
 import React, { useMemo, useRef } from 'react';
 import { useFrame } from '@react-three/fiber';
 import * as THREE from 'three';
-import { ROOM_H } from '../../constants';
+import { ROOM_H, ART_HANG_CENTER } from '../../constants';
 
 // A FIXED number of real spotlights that dynamically reassign themselves to
 // the artworks nearest the camera. Keeping the count constant means the
@@ -27,7 +27,7 @@ export default function NearestPictureLights({ artworks, slotCount = 4 }) {
 
   const placeLight = (slot, art) => {
     const ry = art.rotation?.[1] ?? 0;
-    const posY = art.position[1] ?? 1.55;
+    const posY = art.position[1] ?? ART_HANG_CENTER;
     const knuckleY = ROOM_H - 0.45 - posY;
     const lx = 0;
     const ly = knuckleY - 0.14;

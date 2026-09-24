@@ -2,6 +2,7 @@ import React, { useRef, useEffect, useCallback } from 'react';
 import { CameraControls } from '@react-three/drei';
 import { useFrame, useThree } from '@react-three/fiber';
 import * as THREE from 'three';
+import { ART_HANG_CENTER } from '../../constants';
 
 const OVERVIEW_POS = new THREE.Vector3(0, 2.3, 7.5);
 const OVERVIEW_TARGET = new THREE.Vector3(0, 1.8, -1.0);
@@ -51,7 +52,7 @@ export default function GalleryCamera({ selectedArtwork, isSeated = false, artwo
 
     if (isSeated && !selectedArtwork) {
       const seatedPos = new THREE.Vector3(0, 1.05, -4.0);
-      const seatedTarget = new THREE.Vector3(0, 1.55, -9.8);
+      const seatedTarget = new THREE.Vector3(0, ART_HANG_CENTER, -9.8);
       beginFlight(seatedPos, seatedTarget);
     } else if (selectedArtwork) {
       const art = artworks.find((a) => a.id === selectedArtwork);

@@ -22,11 +22,12 @@ import {
   LogOut
 } from 'lucide-react';
 import { getHallOptions, getWallConfigs } from '../../utils/hallLayouts';
+import { ART_HANG_CENTER } from '../../constants';
 
 const HEIGHT_PRESETS = [
-  { id: 'low', label: 'Low (1.2m)', height: 1.2, icon: ArrowDown },
-  { id: 'eye', label: 'Eye-Level (1.55m)', height: 1.55, icon: Eye },
-  { id: 'high', label: 'High (2.0m)', height: 2.0, icon: ArrowUp },
+  { id: 'low', label: 'Low (1.4m)', height: 1.4, icon: ArrowDown },
+  { id: 'eye', label: `Eye-Level (${ART_HANG_CENTER}m)`, height: ART_HANG_CENTER, icon: Eye },
+  { id: 'high', label: 'High (2.2m)', height: 2.2, icon: ArrowUp },
 ];
 
 // Matte wall finishes for gallery wings (the classic museum tones)
@@ -114,7 +115,7 @@ export default function AdminModal({
   const [selectedHeight, setSelectedHeight] = useState('eye');
   const [showAdvancedPlacement, setShowAdvancedPlacement] = useState(false);
   const [customOffsetNum, setCustomOffsetNum] = useState(0);
-  const [customHeightNum, setCustomHeightNum] = useState(1.55);
+  const [customHeightNum, setCustomHeightNum] = useState(ART_HANG_CENTER);
   // Remembers which wall the slot was auto-picked for, so data refreshes and
   // room switches don't clobber a slot the user chose manually
   const lastAutoWallRef = useRef(null);
@@ -284,9 +285,9 @@ export default function AdminModal({
     setSelectedWallId(art.wallId || 'back');
     
     if (art.position) {
-      const h = art.position[1] || 1.55;
-      if (Math.abs(h - 1.2) < 0.1) setSelectedHeight('low');
-      else if (Math.abs(h - 2.0) < 0.1) setSelectedHeight('high');
+      const h = art.position[1] || ART_HANG_CENTER;
+      if (Math.abs(h - 1.4) < 0.1) setSelectedHeight('low');
+      else if (Math.abs(h - 2.2) < 0.1) setSelectedHeight('high');
       else setSelectedHeight('eye');
 
       const artHall = rooms.find((r) => r.id === art.roomId)?.hall_layout || 'classic';
@@ -308,7 +309,7 @@ export default function AdminModal({
       setSelectedSlot(wallPresets[0].id);
       setSelectedHeight('eye');
       setCustomOffsetNum(wallPresets[0].offset);
-      setCustomHeightNum(1.55);
+      setCustomHeightNum(ART_HANG_CENTER);
     }
 
     setFile(null);
@@ -328,7 +329,7 @@ export default function AdminModal({
     setSelectedSlot(wallPresets[0].id);
     setSelectedHeight('eye');
     setCustomOffsetNum(wallPresets[0].offset);
-    setCustomHeightNum(1.55);
+    setCustomHeightNum(ART_HANG_CENTER);
     setShowAdvancedPlacement(false);
     setStatusMsg(null);
   };
@@ -954,7 +955,7 @@ export default function AdminModal({
                         type="number"
                         step="0.05"
                         value={customHeightNum}
-                        onChange={(e) => setCustomHeightNum(parseFloat(e.target.value) || 1.55)}
+                        onChange={(e) => setCustomHeightNum(parseFloat(e.target.value) || ART_HANG_CENTER)}
                         className="w-full bg-[#111111] border border-white/10 rounded-none px-3 py-2 text-xs text-[#D4AF37] font-mono outline-none"
                       />
                     </div>
