@@ -12,7 +12,7 @@ export const ART_HANG_CENTER = 1.8; // Artwork centerline height (m), elevated f
 // Artwork display scale multiplier for the 3D gallery.
 // Makes artworks (including 15"x22" pieces) visually commanding in the 20m x 20m hall
 // while leaving catalog specs, labels, and room architecture intact.
-export const ARTWORK_SCALE = 1.6;
+export const ARTWORK_SCALE = 1.5;
 
 // Imperial → metric conversion factors for 3D artwork display (scaled by ARTWORK_SCALE)
 export const IN = 0.0254 * ARTWORK_SCALE; // meters per inch in 3D
