@@ -440,6 +440,7 @@ app.post('/api/auth/login', loginLimiter, (req, res) => {
 // GET /api/artists - Get list of all artists
 app.get('/api/artists', (req, res) => {
   try {
+    res.set('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
     const artists = db.prepare('SELECT * FROM artists ORDER BY name ASC').all();
     res.json(artists);
   } catch (err) {
@@ -477,6 +478,7 @@ app.post('/api/artists', writeLimiter, requireAdmin, (req, res) => {
 // GET /api/rooms - Get all rooms with artist details
 app.get('/api/rooms', (req, res) => {
   try {
+    res.set('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
     const rooms = db.prepare(`
       SELECT rooms.*, artists.name as artist_name, artists.slug as artist_slug
       FROM rooms
@@ -617,6 +619,7 @@ app.delete('/api/rooms/:id', writeLimiter, requireAdmin, (req, res) => {
 // GET /api/artworks - Get artworks (optional ?roomId= filter)
 app.get('/api/artworks', (req, res) => {
   try {
+    res.set('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
     const { roomId } = req.query;
     let query = 'SELECT * FROM artworks';
     let params = [];

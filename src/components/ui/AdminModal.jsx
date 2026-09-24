@@ -232,12 +232,13 @@ export default function AdminModal({
   const getOccupyingArtwork = useCallback((slotOffset) => {
     const def = targetWallDefs[selectedWallId] || targetWallDefs.back;
     return activeRoomArtworks.find(a => {
+      if (editingArtwork && a.id === editingArtwork.id) return false;
       if (a.wallId !== selectedWallId) return false;
       const isXAxis = def.axis === 'x';
       const currentOffset = isXAxis ? (a.position?.[0] ?? 0) : (a.position?.[2] ?? 0);
       return Math.abs(currentOffset - slotOffset) < 1.2;
     });
-  }, [activeRoomArtworks, selectedWallId, targetWallDefs]);
+  }, [activeRoomArtworks, selectedWallId, targetWallDefs, editingArtwork]);
 
   // Keep the chosen wall valid for the targeted room's hall architecture
   useEffect(() => {
@@ -403,12 +404,13 @@ export default function AdminModal({
       }
 
       const isEdit = !!editingArtwork;
-      setStatusMsg({ 
-        type: 'success', 
-        text: isEdit ? `Updated "${title}" placement & details!` : `"${title}" hung successfully in the 3D gallery!` 
-      });
+      const successMsg = isEdit 
+        ? `Updated "${title}" placement & details!` 
+        : `"${title}" hung successfully in the 3D gallery!`;
       
       handleCancelEdit();
+      setStatusMsg({ type: 'success', text: successMsg });
+      setActiveTab('list');
       onRefreshData?.();
     } catch (err) {
       console.error("Save artwork error:", err);

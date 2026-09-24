@@ -144,8 +144,10 @@ export const fallbackArtworks = seedArtworks.map((art) => ({
  */
 export async function fetchArtworksAPI(roomId = null) {
   try {
-    const url = roomId ? `/api/artworks?roomId=${encodeURIComponent(roomId)}` : '/api/artworks';
-    const res = await fetch(url);
+    const base = roomId ? `/api/artworks?roomId=${encodeURIComponent(roomId)}` : '/api/artworks';
+    const sep = base.includes('?') ? '&' : '?';
+    const url = `${base}${sep}_t=${Date.now()}`;
+    const res = await fetch(url, { cache: 'no-store' });
     if (!res.ok) throw new Error(`API error: ${res.statusText}`);
     const data = await res.json();
     // An empty array is a valid answer: the room is genuinely empty.
@@ -163,7 +165,7 @@ export async function fetchArtworksAPI(roomId = null) {
  */
 export async function fetchRoomsAPI() {
   try {
-    const res = await fetch('/api/rooms');
+    const res = await fetch(`/api/rooms?_t=${Date.now()}`, { cache: 'no-store' });
     if (!res.ok) throw new Error(`API error: ${res.statusText}`);
     return await res.json();
   } catch (err) {
@@ -177,7 +179,7 @@ export async function fetchRoomsAPI() {
  */
 export async function fetchArtistsAPI() {
   try {
-    const res = await fetch('/api/artists');
+    const res = await fetch(`/api/artists?_t=${Date.now()}`, { cache: 'no-store' });
     if (!res.ok) throw new Error(`API error: ${res.statusText}`);
     return await res.json();
   } catch (err) {
