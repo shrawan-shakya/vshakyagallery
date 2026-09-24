@@ -302,24 +302,64 @@ function slotOnWall(hallId, roomId, requestedWall, db) {
 
 // Multer Storage Configuration — hardened: 15 MB cap, one file,
 // image MIME whitelist (jpeg/png/webp only)
-const MAX_IMAGE_BYTES = 15 * 1024 * 1024;
-// The stored extension comes from the validated MIME type, never from the client's filename
-const IMAGE_EXT_BY_MIME = { 'image/jpeg': '.jpg', 'image/png': '.png', 'image/webp': '.webp' };
-const IMAGE_MIME_TYPES = new Set(Object.keys(IMAGE_EXT_BY_MIME));
+const MAX_IMAGE_BYTES = 35 * 1024 * 1024; // 35 MB
+const IMAGE_EXT_BY_MIME = {
+  'image/jpeg': '.jpg',
+  'image/jpg': '.jpg',
+  'image/pjpeg': '.jpg',
+  'image/png': '.png',
+  'image/x-png': '.png',
+  'image/webp': '.webp',
+  'image/avif': '.avif',
+  'image/tiff': '.tiff',
+  'image/bmp': '.bmp',
+};
+const ALLOWED_EXTS = new Set(['.jpg', '.jpeg', '.png', '.webp', '.avif', '.tiff', '.bmp']);
+
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
     cb(null, uploadsDir);
   },
   filename: (req, file, cb) => {
+    const mime = (file.mimetype || '').toLowerCase();
+    const ext = path.extname(file.originalname || '').toLowerCase();
+    const safeExt = ALLOWED_EXTS.has(ext) ? ext : (IMAGE_EXT_BY_MIME[mime] || '.jpg');
     const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1e9);
-    cb(null, 'artwork-' + uniqueSuffix + IMAGE_EXT_BY_MIME[file.mimetype]);
+    cb(null, 'artwork-' + uniqueSuffix + safeExt);
   }
 });
+
 const upload = multer({
   storage,
   limits: { fileSize: MAX_IMAGE_BYTES, files: 1 },
-  fileFilter: (req, file, cb) => cb(null, IMAGE_MIME_TYPES.has(file.mimetype)),
+  fileFilter: (req, file, cb) => {
+    const mime = (file.mimetype || '').toLowerCase();
+    const ext = path.extname(file.originalname || '').toLowerCase();
+    if (IMAGE_EXT_BY_MIME[mime] || ALLOWED_EXTS.has(ext) || mime.startsWith('image/')) {
+      cb(null, true);
+    } else {
+      cb(new Error(`Unsupported image format (${mime || ext}). Please upload a JPG, PNG, or WebP file.`));
+    }
+  },
 });
+
+// Middleware that wraps multer to return clean JSON error responses instead of HTML 500
+function handleUpload(field) {
+  const uploader = upload.single(field);
+  return (req, res, next) => {
+    uploader(req, res, (err) => {
+      if (err instanceof multer.MulterError) {
+        if (err.code === 'LIMIT_FILE_SIZE') {
+          return res.status(400).json({ error: `Image file is too large (maximum size is ${MAX_IMAGE_BYTES / (1024 * 1024)}MB).` });
+        }
+        return res.status(400).json({ error: `Upload error: ${err.message}` });
+      } else if (err) {
+        return res.status(400).json({ error: err.message });
+      }
+      next();
+    });
+  };
+}
 
 // ---------------- IMAGE PIPELINE ----------------
 // Every upload is re-encoded to WebP at two sizes: the frame texture cap (2048px)
@@ -333,7 +373,7 @@ const IMAGE_VARIANTS = [
 // Persist one processed file: Vercel Blob when configured, else the local /uploads URL
 async function storeImage(localPath, filename, contentType) {
   const token = process.env.BLOB_READ_WRITE_TOKEN;
-  if (!token && !isVercel) return `/uploads/${filename}`;
+  if (!token) return `/uploads/${filename}`;
   try {
     const options = { access: 'public', contentType };
     if (token) options.token = token;
@@ -350,21 +390,24 @@ async function storeImage(localPath, filename, contentType) {
 
 // Multer's temp file -> { imageUrl, imageUrlSm, width, height }
 async function processUpload(file) {
-  const meta = await sharp(file.path).metadata();
-  const base = path.parse(file.filename).name;
-  const result = { width: meta.width, height: meta.height };
-  for (const variant of IMAGE_VARIANTS) {
-    const filename = `${base}${variant.suffix}.webp`;
-    const outPath = path.join(uploadsDir, filename);
-    await sharp(file.path)
-      .rotate() // honour EXIF orientation
-      .resize({ width: variant.maxSide, height: variant.maxSide, fit: 'inside', withoutEnlargement: true })
-      .webp({ quality: 82 })
-      .toFile(outPath);
-    result[variant.key] = await storeImage(outPath, filename, 'image/webp');
+  try {
+    const meta = await sharp(file.path).metadata();
+    const base = path.parse(file.filename).name;
+    const result = { width: meta.width, height: meta.height };
+    for (const variant of IMAGE_VARIANTS) {
+      const filename = `${base}${variant.suffix}.webp`;
+      const outPath = path.join(uploadsDir, filename);
+      await sharp(file.path)
+        .rotate() // honour EXIF orientation
+        .resize({ width: variant.maxSide, height: variant.maxSide, fit: 'inside', withoutEnlargement: true })
+        .webp({ quality: 82 })
+        .toFile(outPath);
+      result[variant.key] = await storeImage(outPath, filename, 'image/webp');
+    }
+    return result;
+  } finally {
+    try { fs.unlinkSync(file.path); } catch { /* ignore */ }
   }
-  try { fs.unlinkSync(file.path); } catch { /* ignore */ }
-  return result;
 }
 
 // Hanging size when the curator gave none: 40in tall, width from the pixel aspect
@@ -637,7 +680,7 @@ app.get('/api/artworks', (req, res) => {
 });
 
 // POST /api/artworks/upload - Upload new artwork image + metadata
-app.post('/api/artworks/upload', writeLimiter, requireAdmin, upload.single('image'), async (req, res) => {
+app.post('/api/artworks/upload', writeLimiter, requireAdmin, handleUpload('image'), async (req, res) => {
   try {
     if (!req.file) {
       return res.status(400).json({ error: 'No image file uploaded' });
@@ -725,7 +768,7 @@ app.post('/api/artworks/upload', writeLimiter, requireAdmin, upload.single('imag
 });
 
 // PUT /api/artworks/:id - Update or Upsert an existing artwork metadata and optional replacement image
-app.put('/api/artworks/:id', writeLimiter, requireAdmin, upload.single('image'), async (req, res) => {
+app.put('/api/artworks/:id', writeLimiter, requireAdmin, handleUpload('image'), async (req, res) => {
   try {
     const { id } = req.params;
     let existing = db.prepare('SELECT * FROM artworks WHERE id = ?').get(id);
