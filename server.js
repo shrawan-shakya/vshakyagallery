@@ -962,6 +962,8 @@ app.put('/api/artworks/:id', writeLimiter, requireAdmin, handleUpload('image'), 
           'virtualGallery.roomId': newRoomId,
           'virtualGallery.showIn3D': true,
           'virtualGallery.unhung': false,
+          'virtualGallery.widthIn': finalWidthIn,
+          'virtualGallery.heightIn': finalHeightIn,
         };
         if (title) patchData.title = newTitle;
         if (artist) patchData.artistName = newArtist;

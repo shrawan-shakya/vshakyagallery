@@ -88,7 +88,7 @@ export function parseDimensions(dimStr, imgDimensions) {
     }
   }
 
-  return { widthIn: Math.max(12, widthIn), heightIn: Math.max(12, heightIn) };
+  return { widthIn: Math.max(4, widthIn), heightIn: Math.max(4, heightIn) };
 }
 
 /**
@@ -121,12 +121,16 @@ export function mapSanityArtworkTo3D(doc, slotIndex = 0) {
     return null;
   }
 
-  const imgMeta = doc.mainImage?.asset?.metadata?.dimensions;
-  const { widthIn, heightIn } = parseDimensions(doc.dimensions, imgMeta);
+  // Check if curator specified an explicit dimension override in virtualGallery
+  let finalWidthIn = doc.virtualGallery?.widthIn;
+  let finalHeightIn = doc.virtualGallery?.heightIn;
 
-  // Apply visual scale factor for luxury presentation
-  const effectiveWidthIn = widthIn * ARTWORK_SCALE;
-  const effectiveHeightIn = heightIn * ARTWORK_SCALE;
+  if (!finalWidthIn || !finalHeightIn || isNaN(finalWidthIn) || isNaN(finalHeightIn)) {
+    const imgMeta = doc.mainImage?.asset?.metadata?.dimensions;
+    const parsed = parseDimensions(doc.dimensions, imgMeta);
+    finalWidthIn = parsed.widthIn;
+    finalHeightIn = parsed.heightIn;
+  }
 
   // Determine wall placement: custom virtualGallery override if set, else assign next slot
   const slot = HALL_SLOTS[slotIndex % HALL_SLOTS.length];
@@ -171,10 +175,10 @@ export function mapSanityArtworkTo3D(doc, slotIndex = 0) {
     audioText: audioText,
     imageUrl,
     imageUrlSm,
-    widthIn: effectiveWidthIn,
-    heightIn: effectiveHeightIn,
-    width: effectiveWidthIn * IN,
-    height: effectiveHeightIn * IN,
+    widthIn: finalWidthIn,
+    heightIn: finalHeightIn,
+    width: finalWidthIn * IN,
+    height: finalHeightIn * IN,
     wallId,
     position,
     rotation,
