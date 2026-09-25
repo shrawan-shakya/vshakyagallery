@@ -283,15 +283,44 @@ export const fallbackArtworks = seedArtworks.map((art) => ({
   height: art.heightIn * IN,
 }));
 
-// Persistent override key - actively purged to maintain exact synchronization across all browsers
-const OVERRIDES_STORAGE_KEY = 'shakya_curator_artworks_v1';
+// Persistent curator artwork overrides key for zero-latency instant updates
+const OVERRIDES_STORAGE_KEY = 'shakya_curator_artworks_v3';
 
-// One-time auto-purge on client load to instantly fix any stale cached overrides in existing browsers
-if (typeof window !== 'undefined') {
+export function getLocalArtworkOverrides() {
+  if (typeof window === 'undefined') return {};
   try {
-    localStorage.removeItem(OVERRIDES_STORAGE_KEY);
-  } catch {
-    /* ignore */
+    const raw = localStorage.getItem(OVERRIDES_STORAGE_KEY);
+    return raw ? JSON.parse(raw) : {};
+  } catch (e) {
+    return {};
+  }
+}
+
+export function saveLocalArtworkOverride(art) {
+  if (typeof window === 'undefined' || !art || !art.id) return;
+  try {
+    const map = getLocalArtworkOverrides();
+    map[art.id] = {
+      ...art,
+      updatedAt: Date.now(),
+    };
+    if (art.sanityId) {
+      map[art.sanityId] = map[art.id];
+    }
+    localStorage.setItem(OVERRIDES_STORAGE_KEY, JSON.stringify(map));
+  } catch (e) {
+    console.warn('Could not save local artwork override:', e);
+  }
+}
+
+export function removeLocalArtworkOverride(id) {
+  if (typeof window === 'undefined' || !id) return;
+  try {
+    const map = getLocalArtworkOverrides();
+    delete map[id];
+    localStorage.setItem(OVERRIDES_STORAGE_KEY, JSON.stringify(map));
+  } catch (e) {
+    console.warn('Could not remove local artwork override:', e);
   }
 }
 
@@ -304,54 +333,94 @@ export function clearLocalArtworkOverrides() {
   }
 }
 
-export function getLocalArtworkOverrides() {
-  return {};
-}
-
-export function saveLocalArtworkOverride() {
-  // Deprecated: server API is the single source of truth across all browsers
-  clearLocalArtworkOverrides();
-}
-
-export function removeLocalArtworkOverride() {
-  // Deprecated: server API is the single source of truth across all browsers
-  clearLocalArtworkOverrides();
-}
-
 /**
- * Fetch artworks from Sanity Content Lake, with fallback to Express API and static catalogue.
- * Authoritative single source of truth across both Shakya Gallery and Virtual Gallery.
+ * Fetch artworks from Sanity Content Lake, merged with instant curator overrides
+ * and falling back to Express REST API / static catalogue.
  */
 export async function fetchArtworksAPI(roomId = null) {
-  // 1. Try querying Sanity Content Lake directly (Edge CDN cached)
+  let list = [];
+
+  // 1. Try querying Sanity Content Lake directly
   try {
     const sanityArtworks = await fetchSanityArtworks();
     if (Array.isArray(sanityArtworks) && sanityArtworks.length > 0) {
-      if (roomId) {
-        return sanityArtworks.filter((a) => !a.roomId || a.roomId === roomId);
-      }
-      return sanityArtworks;
+      list = sanityArtworks;
     }
   } catch (sanityErr) {
     console.warn('Direct Sanity query failed, falling back to API:', sanityErr);
   }
 
   // 2. Fallback to Express REST API
-  try {
-    const base = roomId ? `/api/artworks?roomId=${encodeURIComponent(roomId)}` : '/api/artworks';
-    const sep = base.includes('?') ? '&' : '?';
-    const url = `${base}${sep}_t=${Date.now()}`;
-    const res = await fetch(url, { cache: 'no-store' });
-    if (!res.ok) throw new Error(`API error: ${res.statusText}`);
-    const data = await res.json();
-    if (Array.isArray(data) && data.length > 0) {
-      return data;
+  if (list.length === 0) {
+    try {
+      const base = roomId ? `/api/artworks?roomId=${encodeURIComponent(roomId)}` : '/api/artworks';
+      const sep = base.includes('?') ? '&' : '?';
+      const url = `${base}${sep}_t=${Date.now()}`;
+      const res = await fetch(url, { cache: 'no-store' });
+      if (res.ok) {
+        const data = await res.json();
+        if (Array.isArray(data) && data.length > 0) {
+          list = data;
+        }
+      }
+    } catch (err) {
+      console.warn('Could not reach backend API, using fallback local static artworks:', err);
     }
-    return fallbackArtworks;
-  } catch (err) {
-    console.warn('Could not reach backend API, using fallback local static artworks:', err);
-    return fallbackArtworks;
   }
+
+  if (list.length === 0) {
+    list = fallbackArtworks;
+  }
+
+  // 3. Overlay any active curator overrides (instant local changes before CDN purges)
+  const overrides = getLocalArtworkOverrides();
+  const overriddenIds = new Set();
+
+  let merged = list.map((art) => {
+    const override = overrides[art.id] || overrides[art.sanityId];
+    if (override) {
+      overriddenIds.add(art.id);
+      if (art.sanityId) overriddenIds.add(art.sanityId);
+      const wIn = override.widthIn !== undefined ? parseFloat(override.widthIn) : art.widthIn;
+      const hIn = override.heightIn !== undefined ? parseFloat(override.heightIn) : art.heightIn;
+      return {
+        ...art,
+        ...override,
+        position: override.position || art.position,
+        rotation: override.rotation || art.rotation,
+        wallId: override.wallId || art.wallId,
+        widthIn: wIn,
+        heightIn: hIn,
+        width: wIn * IN,
+        height: hIn * IN,
+        roomId: override.roomId || art.roomId,
+      };
+    }
+    return art;
+  });
+
+  // 4. Also include any locally created artworks that aren't in Sanity yet
+  Object.values(overrides).forEach((ov) => {
+    if (!overriddenIds.has(ov.id) && ov.title) {
+      overriddenIds.add(ov.id);
+      const wIn = parseFloat(ov.widthIn) || 48;
+      const hIn = parseFloat(ov.heightIn) || 36;
+      merged.push({
+        ...ov,
+        widthIn: wIn,
+        heightIn: hIn,
+        width: wIn * IN,
+        height: hIn * IN,
+      });
+    }
+  });
+
+  // 5. Filter by requested exhibition room
+  if (roomId) {
+    return merged.filter((a) => !a.roomId || a.roomId === roomId);
+  }
+
+  return merged;
 }
 
 /**

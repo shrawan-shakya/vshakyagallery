@@ -11,6 +11,7 @@ import sharp from 'sharp';
 import { put } from '@vercel/blob';
 import { IN, ART_HANG_CENTER } from './src/constants.js';
 import { seedArtworks } from './src/data/artworks.js';
+import { createClient } from '@sanity/client';
 import {
   HALL_LAYOUT_IDS,
   DEFAULT_HALL_LAYOUT,
@@ -22,11 +23,30 @@ import { fetchSanityArtworks } from './src/utils/sanityArtworks.js';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// Load .env file for environment variables (ADMIN_PASSWORD, PORT)
+// Load .env file for environment variables (ADMIN_PASSWORD, PORT, SANITY_API_WRITE_TOKEN)
 try {
   process.loadEnvFile(path.join(__dirname, '.env'));
 } catch {
   /* process.loadEnvFile not available or .env missing */
+}
+
+// Global Sanity Write Client for publishing curator edits directly into Sanity Content Lake
+const sanityToken = process.env.SANITY_API_WRITE_TOKEN;
+const sanityProjectId = process.env.NEXT_PUBLIC_SANITY_PROJECT_ID || 'qeqv70yn';
+const sanityDataset = process.env.NEXT_PUBLIC_SANITY_DATASET || 'production';
+
+export const sanityWriteClient = sanityToken
+  ? createClient({
+      projectId: sanityProjectId,
+      dataset: sanityDataset,
+      token: sanityToken,
+      apiVersion: '2026-02-06',
+      useCdn: false,
+    })
+  : null;
+
+if (sanityWriteClient) {
+  console.log('✨ Sanity write client initialized successfully with author token!');
 }
 
 
@@ -925,6 +945,31 @@ app.put('/api/artworks/:id', writeLimiter, requireAdmin, handleUpload('image'), 
       `).run(
         newRoomId, newArtistId, newTitle, newArtist, newYear, newMedium, newDesc, audioText, imageUrl, imageUrlSm, finalWidthIn, finalHeightIn, newWallId, posX, posY, posZ, rotY, id
       );
+    }
+
+    // Direct Global Synchronization with Sanity Content Lake
+    if (sanityWriteClient) {
+      try {
+        const patchData = {
+          'virtualGallery.wallId': newWallId,
+          'virtualGallery.position': { x: posX, y: posY, z: posZ },
+          'virtualGallery.rotationY': rotY,
+          'virtualGallery.roomId': newRoomId,
+        };
+        if (title) patchData.title = newTitle;
+        if (artist) patchData.artistName = newArtist;
+        if (year) patchData.year = newYear;
+        if (medium) patchData.material = newMedium;
+
+        await sanityWriteClient
+          .patch(id)
+          .set(patchData)
+          .commit({ autoGenerateArrayKeys: true });
+
+        console.log(`✅ Synced artwork "${id}" placement directly to Sanity Content Lake!`);
+      } catch (sanityErr) {
+        console.warn(`Sanity patch notice for ${id}:`, sanityErr.message);
+      }
     }
 
     const updated = db.prepare('SELECT * FROM artworks WHERE id = ?').get(id);

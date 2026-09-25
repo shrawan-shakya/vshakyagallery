@@ -458,6 +458,24 @@ export default function AdminModal({
 
       const savedArt = await res.json().catch(() => null);
 
+      // Persist to local override storage immediately so the 3D gallery updates with 0ms latency
+      const updatedObj = savedArt || {
+        id: editingArtwork ? editingArtwork.id : `artwork-${Date.now()}`,
+        sanityId: editingArtwork?.sanityId,
+        title,
+        artist,
+        year,
+        medium,
+        description,
+        widthIn: parseFloat(widthIn) || 48,
+        heightIn: parseFloat(heightIn) || 36,
+        roomId: selectedRoomId || 'room-main',
+        wallId: selectedWallId,
+        position: [posX, heightMeters, posZ],
+        rotation: [0, rotY, 0],
+        imageUrl: previewUrl || fileDataUrl,
+      };
+      saveLocalArtworkOverride(updatedObj);
 
       const isEdit = !!editingArtwork;
       const successMsg = isEdit 

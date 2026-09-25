@@ -9,7 +9,7 @@ export const sanityClient = createClient({
   projectId: SANITY_PROJECT_ID,
   dataset: SANITY_DATASET,
   apiVersion: SANITY_API_VERSION,
-  useCdn: true, // Edge CDN cache for blazing fast visitor response
+  useCdn: false, // Fresh live data so curator updates and new placements reflect immediately
 });
 
 const builder = createImageUrlBuilder(sanityClient);
