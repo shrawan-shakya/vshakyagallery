@@ -24,7 +24,7 @@ import {
 } from 'lucide-react';
 import { getHallOptions, getWallConfigs, getSlotPlan } from '../../utils/hallLayouts';
 import { ART_HANG_CENTER } from '../../constants';
-import { saveLocalArtworkOverride, removeLocalArtworkOverride, clearLocalArtworkOverrides } from '../../data/artworks';
+import { saveLocalArtworkOverride, removeLocalArtworkOverride, markLocalArtworkUnhung, clearLocalArtworkOverrides } from '../../data/artworks';
 import WallPositionRail from './WallPositionRail';
 
 const HEIGHT_PRESETS = [
@@ -602,13 +602,17 @@ export default function AdminModal({
   };
 
   const handleDeleteArtwork = async (id, artTitle) => {
-    if (!window.confirm(`Are you sure you want to remove "${artTitle}" from the exhibition?`)) return;
+    if (!window.confirm(`Unhang "${artTitle}" from the 3D gallery exhibition?\n\n(The original artwork record will remain completely safe in your Sanity catalog and website.)`)) return;
 
     try {
       const res = await adminFetch(`/api/artworks/${id}`, { method: 'DELETE' });
-      if (!res.ok) throw new Error('Failed to delete artwork');
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}));
+        throw new Error(errData.error || 'Failed to unhang artwork');
+      }
       removeLocalArtworkOverride(id);
-      setStatusMsg({ type: 'success', text: `Removed "${artTitle}".` });
+      markLocalArtworkUnhung(id);
+      setStatusMsg({ type: 'success', text: `Unhung "${artTitle}" from 3D exhibition. Master record safely preserved in Sanity.` });
       if (editingArtwork?.id === id) handleCancelEdit();
       onRefreshData?.();
     } catch (err) {
@@ -1332,7 +1336,7 @@ export default function AdminModal({
                       <button
                         onClick={() => handleDeleteArtwork(art.id, art.title)}
                         className="p-2 rounded-none text-slate-400 hover:text-red-400 hover:bg-red-500/10 transition-all"
-                        title="Remove artwork"
+                        title="Unhang artwork from 3D exhibition (safely preserves in Sanity)"
                       >
                         <Trash2 className="w-4 h-4" />
                       </button>

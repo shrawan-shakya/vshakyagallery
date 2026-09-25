@@ -116,6 +116,11 @@ export function toProxyUrl(url) {
  * Transforms a Sanity artwork document into the 3D gallery artwork specification
  */
 export function mapSanityArtworkTo3D(doc, slotIndex = 0) {
+  // If explicitly vaulted / unhung from the 3D exhibition, skip rendering
+  if (doc.virtualGallery?.showIn3D === false || doc.virtualGallery?.unhung === true) {
+    return null;
+  }
+
   const imgMeta = doc.mainImage?.asset?.metadata?.dimensions;
   const { widthIn, heightIn } = parseDimensions(doc.dimensions, imgMeta);
 
@@ -178,7 +183,7 @@ export function mapSanityArtworkTo3D(doc, slotIndex = 0) {
   };
 }
 
-export const SANITY_ARTWORKS_QUERY = `*[_type == "artwork" && (!defined(status) || status in ["available", "sold"])] | order(_createdAt asc) {
+export const SANITY_ARTWORKS_QUERY = `*[_type == "artwork" && (!defined(status) || status in ["available", "sold"]) && (!defined(virtualGallery.showIn3D) || virtualGallery.showIn3D != false) && (!defined(virtualGallery.unhung) || virtualGallery.unhung != true)] | order(_createdAt asc) {
   _id,
   title,
   slug,
@@ -212,5 +217,5 @@ export async function fetchSanityArtworks() {
   if (!Array.isArray(docs) || docs.length === 0) {
     throw new Error('No artworks returned from Sanity');
   }
-  return docs.map((doc, idx) => mapSanityArtworkTo3D(doc, idx));
+  return docs.map((doc, idx) => mapSanityArtworkTo3D(doc, idx)).filter(Boolean);
 }

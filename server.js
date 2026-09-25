@@ -960,6 +960,8 @@ app.put('/api/artworks/:id', writeLimiter, requireAdmin, handleUpload('image'), 
           'virtualGallery.position': { x: posX, y: posY, z: posZ },
           'virtualGallery.rotationY': rotY,
           'virtualGallery.roomId': newRoomId,
+          'virtualGallery.showIn3D': true,
+          'virtualGallery.unhung': false,
         };
         if (title) patchData.title = newTitle;
         if (artist) patchData.artistName = newArtist;
@@ -985,17 +987,42 @@ app.put('/api/artworks/:id', writeLimiter, requireAdmin, handleUpload('image'), 
   }
 });
 
-// DELETE /api/artworks/:id - Delete an artwork
-app.delete('/api/artworks/:id', writeLimiter, requireAdmin, (req, res) => {
+// DELETE /api/artworks/:id - Unhang / remove artwork from 3D gallery display
+app.delete('/api/artworks/:id', writeLimiter, requireAdmin, async (req, res) => {
   try {
     const { id } = req.params;
+    let found = false;
+
+    // 1. If Sanity write client is active, unhang in Sanity while preserving the master record
+    if (sanityWriteClient) {
+      try {
+        await sanityWriteClient
+          .patch(id)
+          .set({
+            'virtualGallery.showIn3D': false,
+            'virtualGallery.unhung': true,
+          })
+          .commit({ autoGenerateArrayKeys: true });
+        console.log(`✅ Unhung artwork "${id}" in Sanity Content Lake (preserved catalog record)`);
+        found = true;
+      } catch (sanityErr) {
+        console.warn(`Sanity unhang note for ${id}:`, sanityErr.message);
+      }
+    }
+
+    // 2. If it exists in local SQLite, remove from SQLite
     const art = db.prepare('SELECT * FROM artworks WHERE id = ?').get(id);
-    if (!art) return res.status(404).json({ error: 'Artwork not found' });
+    if (art) {
+      removeLocalImages(art.image_url, art.image_url_sm);
+      db.prepare('DELETE FROM artworks WHERE id = ?').run(id);
+      found = true;
+    }
 
-    removeLocalImages(art.image_url, art.image_url_sm);
+    if (!found && !sanityWriteClient) {
+      return res.status(404).json({ error: 'Artwork not found' });
+    }
 
-    db.prepare('DELETE FROM artworks WHERE id = ?').run(id);
-    res.json({ success: true, id });
+    res.json({ success: true, id, unhung: true });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

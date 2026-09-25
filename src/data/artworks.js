@@ -335,6 +335,17 @@ export function removeLocalArtworkOverride(id) {
   }
 }
 
+export function markLocalArtworkUnhung(id) {
+  if (typeof window === 'undefined' || !id) return;
+  try {
+    const map = getLocalArtworkOverrides();
+    map[id] = { id, unhung: true, updatedAt: Date.now() };
+    localStorage.setItem(OVERRIDES_STORAGE_KEY, JSON.stringify(map));
+  } catch (e) {
+    console.warn('Could not mark local artwork unhung:', e);
+  }
+}
+
 export function clearLocalArtworkOverrides() {
   if (typeof window === 'undefined') return;
   try {
@@ -436,7 +447,15 @@ export async function fetchArtworksAPI(roomId = null) {
     }
   });
 
-  // 5. Filter by requested exhibition room
+  // 5. Exclude unhung / vaulted artworks from 3D display
+  merged = merged.filter((art) => {
+    const override = overrides[art.id] || overrides[art.sanityId];
+    if (override?.unhung === true) return false;
+    if (art.unhung === true || art.showIn3D === false) return false;
+    return true;
+  });
+
+  // 6. Filter by requested exhibition room
   if (roomId) {
     return merged.filter((a) => !a.roomId || a.roomId === roomId);
   }
