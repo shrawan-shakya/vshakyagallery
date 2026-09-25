@@ -17,6 +17,7 @@ import {
   getWallConfigs,
   getSlotPlan,
 } from './src/utils/hallLayouts.js';
+import { fetchSanityArtworks } from './src/utils/sanityArtworks.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -671,10 +672,23 @@ app.delete('/api/rooms/:id', writeLimiter, requireAdmin, (req, res) => {
 });
 
 // GET /api/artworks - Get artworks (optional ?roomId= filter)
-app.get('/api/artworks', (req, res) => {
+app.get('/api/artworks', async (req, res) => {
   try {
     res.set('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
     const { roomId } = req.query;
+
+    // 1. Prioritize live Sanity Content Lake
+    try {
+      const sanityArtworks = await fetchSanityArtworks();
+      if (Array.isArray(sanityArtworks) && sanityArtworks.length > 0) {
+        const filtered = roomId ? sanityArtworks.filter((a) => !a.roomId || a.roomId === roomId) : sanityArtworks;
+        return res.json(filtered);
+      }
+    } catch (sanityErr) {
+      console.warn('⚠️ Sanity query in /api/artworks failed, falling back to local database:', sanityErr.message);
+    }
+
+    // 2. Fallback to local SQLite database
     let query = 'SELECT * FROM artworks';
     let params = [];
     if (roomId) {

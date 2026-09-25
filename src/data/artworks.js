@@ -1,6 +1,6 @@
-// NOTE: explicit .js extension so this module also loads under Node ESM
-// (server.js seeds the database from it) and not just the Vite bundler.
 import { IN, ART_HANG_CENTER } from '../constants.js';
+import { sanityClient } from '../lib/sanity.js';
+import { fetchSanityArtworks } from '../utils/sanityArtworks.js';
 
 // Seed catalogue — the single source for the SQLite seed (server.js) and the
 // client's offline fallback when the API is unreachable.
@@ -319,10 +319,24 @@ export function removeLocalArtworkOverride() {
 }
 
 /**
- * Fetch artworks from Express REST API with fallback to static artworks.
- * Authoritative server database is the single source of truth for all browsers.
+ * Fetch artworks from Sanity Content Lake, with fallback to Express API and static catalogue.
+ * Authoritative single source of truth across both Shakya Gallery and Virtual Gallery.
  */
 export async function fetchArtworksAPI(roomId = null) {
+  // 1. Try querying Sanity Content Lake directly (Edge CDN cached)
+  try {
+    const sanityArtworks = await fetchSanityArtworks();
+    if (Array.isArray(sanityArtworks) && sanityArtworks.length > 0) {
+      if (roomId) {
+        return sanityArtworks.filter((a) => !a.roomId || a.roomId === roomId);
+      }
+      return sanityArtworks;
+    }
+  } catch (sanityErr) {
+    console.warn('Direct Sanity query failed, falling back to API:', sanityErr);
+  }
+
+  // 2. Fallback to Express REST API
   try {
     const base = roomId ? `/api/artworks?roomId=${encodeURIComponent(roomId)}` : '/api/artworks';
     const sep = base.includes('?') ? '&' : '?';
@@ -350,20 +364,33 @@ export async function fetchRoomsAPI() {
     return await res.json();
   } catch (err) {
     console.warn('Could not fetch rooms from API:', err);
-    return [{ id: 'room-main', title: 'Main Permanent Exhibition', artist_name: 'Featured Contemporary Masters' }];
+    return [{ id: 'room-main', title: 'Main Permanent Exhibition', artist_name: 'Shakya Gallery Masters' }];
   }
 }
 
 /**
- * Fetch list of artists from Express REST API
+ * Fetch list of artists from Sanity Content Lake with fallback to Express REST API
  */
 export async function fetchArtistsAPI() {
+  // 1. Try Sanity Content Lake
+  try {
+    const artists = await sanityClient.fetch(
+      `*[_type == "artist"] | order(name asc) { "id": _id, name, bio, "slug": slug.current }`
+    );
+    if (Array.isArray(artists) && artists.length > 0) {
+      return artists;
+    }
+  } catch (sanityErr) {
+    console.warn('Could not fetch artists from Sanity, trying API:', sanityErr);
+  }
+
+  // 2. Fallback to Express REST API
   try {
     const res = await fetch(`/api/artists?_t=${Date.now()}`, { cache: 'no-store' });
     if (!res.ok) throw new Error(`API error: ${res.statusText}`);
     return await res.json();
   } catch (err) {
     console.warn('Could not fetch artists from API:', err);
-    return [{ id: 'artist-group', name: 'Featured Contemporary Masters' }];
+    return [{ id: 'artist-group', name: 'Shakya Gallery Masters' }];
   }
 }
