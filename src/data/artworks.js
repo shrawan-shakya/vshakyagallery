@@ -286,11 +286,43 @@ export const fallbackArtworks = seedArtworks.map((art) => ({
 // Client-side persistent cache key to prevent serverless split-brain / cold start resets
 const OVERRIDES_STORAGE_KEY = 'shakya_curator_artworks_v1';
 
+const OVERRIDE_TTL_MS = 15 * 60 * 1000; // 15-minute bridge window to prevent stale cross-browser drift
+
+export function clearLocalArtworkOverrides() {
+  if (typeof window === 'undefined') return;
+  try {
+    localStorage.removeItem(OVERRIDES_STORAGE_KEY);
+  } catch (e) {
+    console.warn('Could not clear local artwork overrides:', e);
+  }
+}
+
 export function getLocalArtworkOverrides() {
   if (typeof window === 'undefined') return {};
   try {
     const raw = localStorage.getItem(OVERRIDES_STORAGE_KEY);
-    return raw ? JSON.parse(raw) : {};
+    if (!raw) return {};
+    const overrides = JSON.parse(raw);
+    const now = Date.now();
+    let hasExpired = false;
+
+    // Prune stale overrides older than TTL so browsers re-synchronize with authoritative server state
+    for (const [id, o] of Object.entries(overrides)) {
+      if (!o._savedAt || now - o._savedAt > OVERRIDE_TTL_MS) {
+        delete overrides[id];
+        hasExpired = true;
+      }
+    }
+
+    if (hasExpired) {
+      try {
+        localStorage.setItem(OVERRIDES_STORAGE_KEY, JSON.stringify(overrides));
+      } catch {
+        /* ignore */
+      }
+    }
+
+    return overrides;
   } catch {
     return {};
   }
@@ -329,7 +361,6 @@ function mergeArtworkWithOverrides(serverArtworks, overrides, roomId) {
       const heightIn = override.heightIn ?? art.heightIn;
       return {
         ...art,
-        ...override,
         widthIn,
         heightIn,
         width: widthIn * IN,
@@ -337,6 +368,7 @@ function mergeArtworkWithOverrides(serverArtworks, overrides, roomId) {
         position: override.position || art.position,
         rotation: override.rotation || art.rotation,
         wallId: override.wallId || art.wallId,
+        localDataUrl: override.localDataUrl || undefined,
       };
     }
     return art;

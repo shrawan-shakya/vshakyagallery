@@ -19,11 +19,12 @@ import {
   ArrowUp,
   ArrowDown,
   Lock,
-  LogOut
+  LogOut,
+  RefreshCw
 } from 'lucide-react';
 import { getHallOptions, getWallConfigs } from '../../utils/hallLayouts';
 import { ART_HANG_CENTER } from '../../constants';
-import { saveLocalArtworkOverride, removeLocalArtworkOverride } from '../../data/artworks';
+import { saveLocalArtworkOverride, removeLocalArtworkOverride, clearLocalArtworkOverrides } from '../../data/artworks';
 
 const HEIGHT_PRESETS = [
   { id: 'low', label: 'Low (1.4m)', height: 1.4, icon: ArrowDown },
@@ -1252,6 +1253,24 @@ export default function AdminModal({
           {/* TAB 3: MANAGE EXHIBITION */}
           {activeTab === 'manage' && (
             <div className="space-y-3">
+              <div className="flex items-center justify-between pb-2 border-b border-white/10">
+                <span className="text-[10px] font-mono text-slate-400">
+                  {artworks.length} Masterpiece{artworks.length !== 1 ? 's' : ''} in Catalogue
+                </span>
+                <button
+                  type="button"
+                  onClick={() => {
+                    clearLocalArtworkOverrides();
+                    onRefreshData?.();
+                    setStatusMsg({ type: 'success', text: 'Local browser cache cleared! Synced directly with server.' });
+                  }}
+                  className="flex items-center gap-1.5 px-2.5 py-1 text-[10px] font-bold uppercase tracking-luxury-wide text-[#D4AF37] border border-[#D4AF37]/30 hover:border-[#D4AF37] hover:bg-[#D4AF37]/10 transition-all rounded-none cursor-pointer"
+                  title="Purge local browser overrides and force reload from authoritative server database"
+                >
+                  <RefreshCw className="w-3 h-3" />
+                  Sync with Server
+                </button>
+              </div>
               {artworks.length === 0 ? (
                 <p className="text-xs text-slate-400 text-center py-8">No artworks in current exhibition catalogue.</p>
               ) : (
