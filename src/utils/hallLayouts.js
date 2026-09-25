@@ -141,48 +141,49 @@ export const HALL_LAYOUTS = {
     ],
     slotPlan: {
       back: [-6.75, -4.5, -2.25, 0, 2.25, 4.5, 6.75],
-      left: [-6.75, -4.5, -2.25, 0, 2.25, 4.5, 6.75],
-      right: [-6.75, -4.5, -2.25, 0, 2.25, 4.5, 6.75],
-      baffle_a_front: [-8.7, -7.4, -6.1],
-      baffle_a_back: [-8.7, -7.4, -6.1],
-      baffle_b_front: [6.1, 7.4, 8.7],
-      baffle_b_back: [6.1, 7.4, 8.7],
+      left: [-7.5, -6.0, -2.5, 0.0, 2.5, 5.0, 7.0],
+      right: [-7.0, -4.5, -2.0, -0.2, 3.2, 5.5, 7.5],
+      baffle_a_front: [-8.6, -7.4, -6.2],
+      baffle_a_back: [-8.6, -7.4, -6.2],
+      baffle_b_front: [6.2, 7.4, 8.6],
+      baffle_b_back: [6.2, 7.4, 8.6],
     },
     walls: {
       ...PERIMETER_WALLS,
       baffle_a_front: {
-        name: 'Baffle A (Front Face)',
-        center: [-7.4, ART_HANG_CENTER, -4.325],
+        name: 'Baffle A (South Face)',
+        center: [-7.4, ART_HANG_CENTER, -4.275],
         rotation: [0, 0, 0],
-        spanMin: -9.3,
-        spanMax: -5.5,
+        spanMin: -9.2,
+        spanMax: -5.6,
         axis: 'x',
       },
       baffle_a_back: {
-        name: 'Baffle A (Rear Face)',
-        center: [-7.4, ART_HANG_CENTER, -4.675],
+        name: 'Baffle A (North Face)',
+        center: [-7.4, ART_HANG_CENTER, -4.725],
         rotation: [0, Math.PI, 0],
-        spanMin: -9.3,
-        spanMax: -5.5,
+        spanMin: -9.2,
+        spanMax: -5.6,
         axis: 'x',
       },
       baffle_b_front: {
-        name: 'Baffle B (Front Face)',
-        center: [7.4, ART_HANG_CENTER, 1.675],
+        name: 'Baffle B (South Face)',
+        center: [7.4, ART_HANG_CENTER, 1.725],
         rotation: [0, 0, 0],
-        spanMin: 5.5,
-        spanMax: 9.3,
+        spanMin: 5.6,
+        spanMax: 9.2,
         axis: 'x',
       },
       baffle_b_back: {
-        name: 'Baffle B (Rear Face)',
-        center: [7.4, ART_HANG_CENTER, 1.325],
+        name: 'Baffle B (North Face)',
+        center: [7.4, ART_HANG_CENTER, 1.275],
         rotation: [0, Math.PI, 0],
-        spanMin: 5.5,
-        spanMax: 9.3,
+        spanMin: 5.6,
+        spanMax: 9.2,
         axis: 'x',
       },
     },
+
     lightingPlan: {
       tubeRows: [-5.75, 3.25],
       tubeXs: [-2.9, 2.9],
@@ -235,5 +236,59 @@ export function getHallOptions() {
     circulation: l.circulation,
     lighting: l.lighting,
   }));
+}
+
+/**
+ * Adapts a list of artworks to the geometry of the given hall layout.
+ * Prevents artworks from hanging in mid-air when a room uses a layout
+ * without a center partition (e.g. Chronological Loop) or vice versa.
+ */
+export function adaptArtworksToHall(artworks, hallLayoutId) {
+  if (!Array.isArray(artworks)) return [];
+  const hall = getHallLayout(hallLayoutId);
+  const walls = hall.walls;
+  const plan = hall.slotPlan;
+
+  return artworks.map((art, idx) => {
+    // If the artwork's wallId exists in this hall, it has valid physical backing
+    if (walls[art.wallId]) {
+      return art;
+    }
+
+    // Wall does not exist in this hall architecture!
+    if (hallLayoutId === 'loop') {
+      // In loop, partition_front and partition_back do NOT exist.
+      // Re-map them to Baffle A (West Chapel) or Baffle B (East Chapel)
+      const isBack = art.wallId === 'partition_back' || (art.rotation && Math.abs(art.rotation[1] - Math.PI) < 0.1);
+      const targetWall = isBack
+        ? (idx % 2 === 0 ? 'baffle_a_back' : 'baffle_b_back')
+        : (idx % 2 === 0 ? 'baffle_a_front' : 'baffle_b_front');
+      const def = walls[targetWall];
+      const slots = plan[targetWall] || [def.center[0]];
+      const slotX = slots[idx % slots.length];
+
+      return {
+        ...art,
+        wallId: targetWall,
+        position: [slotX, art.position?.[1] || ART_HANG_CENTER, def.center[2]],
+        rotation: def.rotation,
+      };
+    } else {
+      // In classic, baffle walls do not exist.
+      // Re-map them to middle wall front or back
+      const isBack = art.wallId?.includes('back') || (art.rotation && Math.abs(art.rotation[1] - Math.PI) < 0.1);
+      const targetWall = isBack ? 'partition_back' : 'partition_front';
+      const def = walls[targetWall];
+      const slots = plan[targetWall] || [0];
+      const slotX = slots[idx % slots.length];
+
+      return {
+        ...art,
+        wallId: targetWall,
+        position: [slotX, art.position?.[1] || ART_HANG_CENTER, def.center[2]],
+        rotation: def.rotation,
+      };
+    }
+  });
 }
 

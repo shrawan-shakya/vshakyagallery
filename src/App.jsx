@@ -14,7 +14,8 @@ import Lights from './components/3d/Lights';
 import RoomPortal from './components/3d/RoomPortal';
 import MuseumBench from './components/3d/MuseumBench';
 import NearestPictureLights from './components/3d/NearestPictureLights';
-import { getColliders } from './utils/hallLayouts';
+import { getColliders, adaptArtworksToHall } from './utils/hallLayouts';
+
 import {
   QUALITY_TIERS,
   detectQualityTier,
@@ -338,6 +339,7 @@ export default function App() {
     [roomsList, currentRoomId],
   );
   const currentRoom = useMemo(() => roomsList.find((r) => r.id === activeRoomId), [roomsList, activeRoomId]);
+  const currentHallLayout = currentRoom?.hall_layout || 'classic';
 
   // Load rooms and artists metadata
   const loadMetadata = useCallback(async () => {
@@ -372,8 +374,16 @@ export default function App() {
     loadRoomArtworks(activeRoomId);
   }, [loadMetadata, loadRoomArtworks, activeRoomId]);
 
+  // Adapt artworks to the active room's hall architecture so no paintings float in mid-air
+  const displayedArtworks = useMemo(
+    () => adaptArtworksToHall(artworksList, currentHallLayout),
+    [artworksList, currentHallLayout]
+  );
+
   // Find currently selected artwork object
-  const currentArtwork = artworksList.find((art) => art.id === selectedArtwork);
+  const currentArtwork = displayedArtworks.find((art) => art.id === selectedArtwork) || artworksList.find((art) => art.id === selectedArtwork);
+
+
 
   const handleSelectArtwork = useCallback((id) => {
     setSelectedArtwork(id);
@@ -470,8 +480,6 @@ export default function App() {
   // Per-room wall finish chosen at creation time (defaults to matte white)
   const currentWallColor = currentRoom?.wall_color || '#ffffff';
 
-  // Hall architecture preset for the active room (walls, partitions, lighting)
-  const currentHallLayout = currentRoom?.hall_layout || 'classic';
 
   // Player-collision footprints for the active hall's internal architecture,
   // padded by the player radius once so WalkControls only iterates raw boxes
@@ -531,7 +539,7 @@ export default function App() {
             <Lights />
 
             {/* Fixed pool of real spotlights that follow the nearest artworks */}
-            <NearestPictureLights artworks={artworksList} slotCount={quality.spotSlots} />
+            <NearestPictureLights artworks={displayedArtworks} slotCount={quality.spotSlots} />
 
             {/* Architectural Geometry — hall layout drives partitions/islands/lighting */}
             <GalleryRoom wallColor={currentWallColor} hallLayout={currentHallLayout} quality={quality} />
@@ -550,7 +558,7 @@ export default function App() {
             )}
 
             {/* Render individual Wall-hanging 2D artwork frames */}
-            {artworksList.map((art) => (
+            {displayedArtworks.map((art) => (
               <ArtworkFrame
                 key={art.id}
                 artwork={art}
@@ -573,7 +581,7 @@ export default function App() {
                 onFocusChange={handleFocusChange}
                 lockRequestRef={lockRequestRef}
                 selectedArtwork={selectedArtwork}
-                artworks={artworksList}
+                artworks={displayedArtworks}
                 isSeated={isSeated}
                 onStandUp={handleStandUp}
                 transitionSignal={roomTransition}
@@ -586,9 +594,10 @@ export default function App() {
               <GalleryCamera
                 selectedArtwork={selectedArtwork}
                 isSeated={isSeated}
-                artworks={artworksList}
+                artworks={displayedArtworks}
               />
             )}
+
 
             {/* Cinematic Post-Processing Effects with Safe Fallback */}
             <SafeEffectComposer multisampling={1}>
@@ -632,7 +641,7 @@ export default function App() {
 
       {/* Floating Glassmorphic HUD overlay */}
       <HUD
-        artworks={artworksList}
+        artworks={displayedArtworks}
         selectedArtwork={selectedArtwork}
         isSeated={isSeated}
         onStandUp={handleStandUp}
@@ -694,10 +703,12 @@ export default function App() {
             rooms={roomsList}
             artists={artistsList}
             artworks={artworksList}
+            activeRoomId={activeRoomId}
             onRefreshData={refreshAllData}
           />
         </Suspense>
       )}
+
     </main>
   );
 }

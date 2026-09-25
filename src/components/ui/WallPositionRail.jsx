@@ -113,6 +113,8 @@ export default function WallPositionRail({
   const currentPercent = toPercent(currentOffset);
   const newWidthPercent = (newWidthMeters / totalSpan) * 100;
 
+  const wallCenterCoord = wallDef ? (wallDef.axis === 'x' ? wallDef.center[0] : wallDef.center[2]) : 0;
+
   return (
     <div className="space-y-3 bg-[#141414] border border-white/10 p-4">
       {/* Header with Live Readout & Stats */}
@@ -149,7 +151,7 @@ export default function WallPositionRail({
           {/* Wall Center Line Marker */}
           <div
             className="absolute top-0 bottom-0 w-[1px] bg-white/20 z-0 pointer-events-none"
-            style={{ left: `${toPercent(0)}%` }}
+            style={{ left: `${toPercent(wallCenterCoord)}%` }}
           />
 
           {/* Existing Hung Artworks on Wall */}
@@ -240,7 +242,7 @@ export default function WallPositionRail({
           <span className="text-[#D4AF37] flex items-center gap-1 font-bold">
             <Crosshair className="w-3 h-3" /> Drag Slider to Fine-Tune Position
           </span>
-          <span>+{spanMax.toFixed(1)}m (Right End)</span>
+          <span>{spanMax >= 0 ? `+${spanMax.toFixed(1)}` : spanMax.toFixed(1)}m (Right End)</span>
         </div>
         <input
           type="range"

@@ -47,11 +47,10 @@ const HALL_WALL_META = {
   right: { title: 'Right Wall', label: 'EAST' },
   partition_front: { title: 'Middle Wall (Front)', label: 'MIDDLE' },
   partition_back: { title: 'Middle Wall (Back)', label: 'MIDDLE' },
-  baffle_a_front: { title: 'Baffle A Front', label: 'CHAPEL I' },
-
-  baffle_a_back: { title: 'Baffle A Rear', label: 'CHAPEL I' },
-  baffle_b_front: { title: 'Baffle B Front', label: 'CHAPEL II' },
-  baffle_b_back: { title: 'Baffle B Rear', label: 'CHAPEL II' },
+  baffle_a_front: { title: 'Baffle A (South Face)', label: 'CHAPEL I' },
+  baffle_a_back: { title: 'Baffle A (North Face)', label: 'CHAPEL I' },
+  baffle_b_front: { title: 'Baffle B (South Face)', label: 'CHAPEL II' },
+  baffle_b_back: { title: 'Baffle B (North Face)', label: 'CHAPEL II' },
 };
 
 // Wall slot presets derived directly from the hall architecture's slotPlan
@@ -59,14 +58,18 @@ const HALL_WALL_META = {
 function presetsForWall(wallId, hallLayoutId) {
   const plan = getSlotPlan(hallLayoutId);
   const wallSlots = plan?.[wallId] || [0];
+  const defs = getWallConfigs(hallLayoutId);
+  const wallDef = defs?.[wallId];
+  const centerCoord = wallDef ? (wallDef.axis === 'x' ? wallDef.center[0] : wallDef.center[2]) : 0;
 
   return wallSlots.map((offset, i) => {
+    const rel = offset - centerCoord;
     let label = 'Center';
     let icon = Circle;
-    if (offset < -0.1) {
+    if (rel < -0.1) {
       icon = ArrowLeft;
-      const countLeft = wallSlots.filter((s) => s < -0.1).length;
-      const rank = wallSlots.filter((s) => s < -0.1).indexOf(offset);
+      const countLeft = wallSlots.filter((s) => (s - centerCoord) < -0.1).length;
+      const rank = wallSlots.filter((s) => (s - centerCoord) < -0.1).indexOf(offset);
       if (countLeft >= 3) {
         label = rank === 0 ? 'Far L' : rank === 1 ? 'Mid L' : 'Inner L';
       } else if (countLeft === 2) {
@@ -74,10 +77,10 @@ function presetsForWall(wallId, hallLayoutId) {
       } else {
         label = 'Left';
       }
-    } else if (offset > 0.1) {
+    } else if (rel > 0.1) {
       icon = ArrowRight;
-      const countRight = wallSlots.filter((s) => s > 0.1).length;
-      const rank = wallSlots.filter((s) => s > 0.1).indexOf(offset);
+      const countRight = wallSlots.filter((s) => (s - centerCoord) > 0.1).length;
+      const rank = wallSlots.filter((s) => (s - centerCoord) > 0.1).indexOf(offset);
       if (countRight >= 3) {
         label = rank === countRight - 1 ? 'Far R' : rank === countRight - 2 ? 'Mid R' : 'Inner R';
       } else if (countRight === 2) {
@@ -106,7 +109,8 @@ export default function AdminModal({
   rooms = [],
   artists = [],
   artworks = [],
-  onRefreshData
+  onRefreshData,
+  activeRoomId = 'room-main',
 }) {
   const [activeTab, setActiveTab] = useState('upload'); // 'upload' | 'rooms' | 'manage'
   const [editingArtwork, setEditingArtwork] = useState(null);
@@ -220,12 +224,44 @@ export default function AdminModal({
 
   useEffect(() => {
     if (rooms.length > 0 && !selectedRoomId) {
-      setSelectedRoomId(rooms[0].id);
+      setSelectedRoomId(activeRoomId || rooms[0].id);
     }
     if (artists.length > 0 && !newRoomArtistId) {
       setNewRoomArtistId(artists[0].id);
     }
-  }, [rooms, artists, selectedRoomId, newRoomArtistId]);
+  }, [rooms, artists, selectedRoomId, newRoomArtistId, activeRoomId]);
+
+  // When opening modal fresh (not editing an artwork), sync to currently viewed room wing
+  useEffect(() => {
+    if (isOpen && !editingArtwork && activeRoomId) {
+      setSelectedRoomId(activeRoomId);
+    }
+  }, [isOpen, activeRoomId, editingArtwork]);
+
+  const handleRoomChange = (newRoomId) => {
+    setSelectedRoomId(newRoomId);
+    const newHall = rooms.find((r) => r.id === newRoomId)?.hall_layout || 'classic';
+    const newDefs = getWallConfigs(newHall);
+
+    // If current selectedWallId doesn't exist in the new hall, choose a sensible fallback
+    let nextWallId = selectedWallId;
+    if (!newDefs[selectedWallId]) {
+      if (newHall === 'loop' && (selectedWallId === 'partition_front' || selectedWallId === 'partition_back')) {
+        nextWallId = 'baffle_a_front';
+      } else if (newHall === 'classic' && selectedWallId.startsWith('baffle_')) {
+        nextWallId = 'partition_front';
+      } else {
+        nextWallId = Object.keys(newDefs)[0] || 'back';
+      }
+      setSelectedWallId(nextWallId);
+    }
+
+    const presets = presetsForWall(nextWallId, newHall);
+    if (presets.length > 0) {
+      setSelectedSlot(presets[0].id);
+      setCustomOffsetNum(presets[0].offset);
+    }
+  };
 
   // Count paintings per wall in the target room (walls of that hall only)
   const wallCounts = useMemo(() => {
@@ -332,8 +368,24 @@ export default function AdminModal({
     setDescription(art.description || '');
     setWidthIn(art.widthIn?.toString() || '48');
     setHeightIn(art.heightIn?.toString() || '36');
-    setSelectedRoomId(art.roomId || rooms[0]?.id || 'room-main');
-    setSelectedWallId(art.wallId || 'back');
+    const artRoomId = art.roomId || activeRoomId || rooms[0]?.id || 'room-main';
+    setSelectedRoomId(artRoomId);
+
+    const artHall = rooms.find((r) => r.id === artRoomId)?.hall_layout || 'classic';
+    const defs = getWallConfigs(artHall);
+
+    // Validate that art.wallId is actually valid for this room's hall
+    let targetWall = art.wallId || 'back';
+    if (!defs[targetWall]) {
+      if (artHall === 'loop' && (targetWall === 'partition_front' || targetWall === 'partition_back')) {
+        targetWall = 'baffle_a_front';
+      } else if (artHall === 'classic' && targetWall.startsWith('baffle_')) {
+        targetWall = 'partition_front';
+      } else {
+        targetWall = Object.keys(defs)[0] || 'back';
+      }
+    }
+    setSelectedWallId(targetWall);
     
     if (art.position) {
       const h = art.position[1] || ART_HANG_CENTER;
@@ -341,22 +393,24 @@ export default function AdminModal({
       else if (Math.abs(h - 2.2) < 0.1) setSelectedHeight('high');
       else setSelectedHeight('eye');
 
-      const artHall = rooms.find((r) => r.id === art.roomId)?.hall_layout || 'classic';
-      const defs = getWallConfigs(artHall);
-      const def = defs[art.wallId] || defs.back;
+      const def = defs[targetWall] || defs.back;
       const isXAxis = def.axis === 'x';
-      const offset = isXAxis ? art.position[0] || 0 : art.position[2] || 0;
+      const offset = isXAxis ? (art.position[0] ?? 0) : (art.position[2] ?? 0);
 
       // Snap to the nearest preset slot so editing keeps the artwork where it hangs
-      const nearest = presetsForWall(art.wallId || 'back', artHall).reduce(
-        (best, s) => (Math.abs(s.offset - offset) < Math.abs(best.offset - offset) ? s : best)
-      );
-      setSelectedSlot(nearest.id);
+      const presets = presetsForWall(targetWall, artHall);
+      if (presets.length > 0) {
+        const nearest = presets.reduce(
+          (best, s) => (Math.abs(s.offset - offset) < Math.abs(best.offset - offset) ? s : best),
+          presets[0]
+        );
+        setSelectedSlot(nearest?.id || presets[0].id);
+      }
 
       setCustomOffsetNum(offset);
       setCustomHeightNum(h);
     } else {
-      const wallPresets = presetsForWall(art.wallId || selectedWallId || 'back', targetHallId);
+      const wallPresets = presetsForWall(targetWall, artHall);
       setSelectedSlot(wallPresets[0]?.id || null);
       setSelectedHeight('eye');
       setCustomOffsetNum(wallPresets[0]?.offset || 0);
@@ -894,20 +948,27 @@ export default function AdminModal({
                 </div>
                 <select 
                   value={selectedRoomId}
-                  onChange={(e) => setSelectedRoomId(e.target.value)}
+                  onChange={(e) => handleRoomChange(e.target.value)}
                   className="w-full bg-[#181818] border border-white/15 rounded-none px-3 py-2.5 text-xs text-[#FAFAFA] focus:border-[#D4AF37] outline-none"
                 >
                   {rooms.map((r) => (
-                    <option key={r.id} value={r.id}>{r.title} ({r.artist_name || 'Group'})</option>
+                    <option key={r.id} value={r.id}>
+                      {r.title} ({r.artist_name || 'Group'}) — [{r.hall_layout === 'loop' ? 'Chronological Loop' : 'Classic Hall'}]
+                    </option>
                   ))}
                 </select>
               </div>
 
               {/* STEP 1: CHOOSE TARGET WALL CARDS */}
               <div className="space-y-2.5">
-                <label className="block text-[10px] font-bold uppercase tracking-luxury-wide text-[#D4AF37]">
-                  Step 1: Choose Target Gallery Wall
-                </label>
+                <div className="flex items-center justify-between">
+                  <label className="block text-[10px] font-bold uppercase tracking-luxury-wide text-[#D4AF37]">
+                    Step 1: Choose Target Gallery Wall
+                  </label>
+                  <span className="text-[9px] font-mono px-2 py-0.5 border border-[#D4AF37]/40 bg-[#D4AF37]/10 text-[#D4AF37]">
+                    Architecture: {targetHallId === 'loop' ? 'Chronological Loop' : 'Classic Center Hall'}
+                  </span>
+                </div>
                 <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
                   {wallCards.map((w) => {
                     const isSelected = selectedWallId === w.id;
