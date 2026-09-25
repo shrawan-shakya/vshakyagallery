@@ -283,10 +283,17 @@ export const fallbackArtworks = seedArtworks.map((art) => ({
   height: art.heightIn * IN,
 }));
 
-// Client-side persistent cache key to prevent serverless split-brain / cold start resets
+// Persistent override key - actively purged to maintain exact synchronization across all browsers
 const OVERRIDES_STORAGE_KEY = 'shakya_curator_artworks_v1';
 
-const OVERRIDE_TTL_MS = 15 * 60 * 1000; // 15-minute bridge window to prevent stale cross-browser drift
+// One-time auto-purge on client load to instantly fix any stale cached overrides in existing browsers
+if (typeof window !== 'undefined') {
+  try {
+    localStorage.removeItem(OVERRIDES_STORAGE_KEY);
+  } catch {
+    /* ignore */
+  }
+}
 
 export function clearLocalArtworkOverrides() {
   if (typeof window === 'undefined') return;
@@ -298,106 +305,24 @@ export function clearLocalArtworkOverrides() {
 }
 
 export function getLocalArtworkOverrides() {
-  if (typeof window === 'undefined') return {};
-  try {
-    const raw = localStorage.getItem(OVERRIDES_STORAGE_KEY);
-    if (!raw) return {};
-    const overrides = JSON.parse(raw);
-    const now = Date.now();
-    let hasExpired = false;
-
-    // Prune stale overrides older than TTL so browsers re-synchronize with authoritative server state
-    for (const [id, o] of Object.entries(overrides)) {
-      if (!o._savedAt || now - o._savedAt > OVERRIDE_TTL_MS) {
-        delete overrides[id];
-        hasExpired = true;
-      }
-    }
-
-    if (hasExpired) {
-      try {
-        localStorage.setItem(OVERRIDES_STORAGE_KEY, JSON.stringify(overrides));
-      } catch {
-        /* ignore */
-      }
-    }
-
-    return overrides;
-  } catch {
-    return {};
-  }
+  return {};
 }
 
-export function saveLocalArtworkOverride(artwork) {
-  if (typeof window === 'undefined' || !artwork?.id) return;
-  try {
-    const overrides = getLocalArtworkOverrides();
-    overrides[artwork.id] = {
-      ...artwork,
-      _savedAt: Date.now(),
-    };
-    localStorage.setItem(OVERRIDES_STORAGE_KEY, JSON.stringify(overrides));
-  } catch (e) {
-    console.warn('Could not save artwork override to localStorage:', e);
-  }
+export function saveLocalArtworkOverride() {
+  // Deprecated: server API is the single source of truth across all browsers
+  clearLocalArtworkOverrides();
 }
 
-export function removeLocalArtworkOverride(artworkId) {
-  if (typeof window === 'undefined' || !artworkId) return;
-  try {
-    const overrides = getLocalArtworkOverrides();
-    delete overrides[artworkId];
-    localStorage.setItem(OVERRIDES_STORAGE_KEY, JSON.stringify(overrides));
-  } catch (e) {
-    console.warn('Could not remove artwork override from localStorage:', e);
-  }
-}
-
-function mergeArtworkWithOverrides(serverArtworks, overrides, roomId) {
-  const merged = serverArtworks.map((art) => {
-    const override = overrides[art.id];
-    if (override) {
-      const widthIn = override.widthIn ?? art.widthIn;
-      const heightIn = override.heightIn ?? art.heightIn;
-      return {
-        ...art,
-        widthIn,
-        heightIn,
-        width: widthIn * IN,
-        height: heightIn * IN,
-        position: override.position || art.position,
-        rotation: override.rotation || art.rotation,
-        wallId: override.wallId || art.wallId,
-        localDataUrl: override.localDataUrl || undefined,
-      };
-    }
-    return art;
-  });
-
-  // Include any freshly uploaded artworks that may only be in local cache
-  for (const [id, o] of Object.entries(overrides)) {
-    if (!merged.some((a) => a.id === id) && (!roomId || o.roomId === roomId)) {
-      const widthIn = o.widthIn || 48;
-      const heightIn = o.heightIn || 36;
-      merged.push({
-        ...o,
-        widthIn,
-        heightIn,
-        width: widthIn * IN,
-        height: heightIn * IN,
-      });
-    }
-  }
-
-  return merged;
+export function removeLocalArtworkOverride() {
+  // Deprecated: server API is the single source of truth across all browsers
+  clearLocalArtworkOverrides();
 }
 
 /**
- * Fetch artworks from Express REST API with fallback to static artworks,
- * layered with client-side overrides to guarantee consistent state across serverless containers.
+ * Fetch artworks from Express REST API with fallback to static artworks.
+ * Authoritative server database is the single source of truth for all browsers.
  */
 export async function fetchArtworksAPI(roomId = null) {
-  const overrides = getLocalArtworkOverrides();
   try {
     const base = roomId ? `/api/artworks?roomId=${encodeURIComponent(roomId)}` : '/api/artworks';
     const sep = base.includes('?') ? '&' : '?';
@@ -405,11 +330,13 @@ export async function fetchArtworksAPI(roomId = null) {
     const res = await fetch(url, { cache: 'no-store' });
     if (!res.ok) throw new Error(`API error: ${res.statusText}`);
     const data = await res.json();
-    if (!Array.isArray(data)) return mergeArtworkWithOverrides(fallbackArtworks, overrides, roomId);
-    return mergeArtworkWithOverrides(data, overrides, roomId);
+    if (Array.isArray(data) && data.length > 0) {
+      return data;
+    }
+    return fallbackArtworks;
   } catch (err) {
     console.warn('Could not reach backend API, using fallback local static artworks:', err);
-    return mergeArtworkWithOverrides(fallbackArtworks, overrides, roomId);
+    return fallbackArtworks;
   }
 }
 

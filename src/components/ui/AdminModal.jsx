@@ -431,12 +431,7 @@ export default function AdminModal({
       }
 
       const savedArt = await res.json().catch(() => null);
-      if (savedArt && savedArt.id) {
-        saveLocalArtworkOverride({
-          ...savedArt,
-          localDataUrl: fileDataUrl || null,
-        });
-      }
+
 
       const isEdit = !!editingArtwork;
       const successMsg = isEdit 
