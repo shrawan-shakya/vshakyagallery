@@ -116,6 +116,38 @@ if (fs.existsSync(bundledUploadsDir)) {
 }
 app.use('/uploads', express.static(uploadsDir, staticUploadOptions));
 
+// Image proxy to bypass third-party CDN CORS restrictions in Three.js WebGL
+app.get('/api/image-proxy', async (req, res) => {
+  try {
+    const targetUrl = req.query.url;
+    if (!targetUrl || typeof targetUrl !== 'string') {
+      return res.status(400).send('Missing url parameter');
+    }
+
+    const parsed = new URL(targetUrl);
+    if (!parsed.hostname.endsWith('sanity.io')) {
+      return res.status(403).send('Untrusted host');
+    }
+
+    const upstreamRes = await fetch(targetUrl);
+    if (!upstreamRes.ok) {
+      return res.status(upstreamRes.status).send('Upstream error');
+    }
+
+    const contentType = upstreamRes.headers.get('content-type') || 'image/jpeg';
+    res.set('Content-Type', contentType);
+    res.set('Access-Control-Allow-Origin', '*');
+    res.set('Cross-Origin-Resource-Policy', 'cross-origin');
+    res.set('Cache-Control', 'public, max-age=31536000, immutable');
+
+    const buffer = await upstreamRes.arrayBuffer();
+    res.send(Buffer.from(buffer));
+  } catch (err) {
+    console.error('Image proxy error:', err.message);
+    res.status(500).send('Failed to proxy image');
+  }
+});
+
 // Initialize SQLite database (copy seed db to /tmp on Vercel)
 const dbPath = isVercel ? path.join('/tmp', 'gallery.db') : path.join(__dirname, 'gallery.db');
 if (isVercel && !fs.existsSync(dbPath)) {

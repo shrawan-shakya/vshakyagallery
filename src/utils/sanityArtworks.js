@@ -106,6 +106,12 @@ export function blocksToPlainText(blocks = []) {
     .join('\n\n');
 }
 
+export function toProxyUrl(url) {
+  if (!url || typeof url !== 'string') return '';
+  if (url.startsWith('/')) return url;
+  return `/api/image-proxy?url=${encodeURIComponent(url)}`;
+}
+
 /**
  * Transforms a Sanity artwork document into the 3D gallery artwork specification
  */
@@ -127,10 +133,13 @@ export function mapSanityArtworkTo3D(doc, slotIndex = 0) {
     ? [0, doc.virtualGallery.rotationY, 0]
     : slot.rotation;
 
-  // High-performance WebP URLs from Sanity CDN
+  // High-performance WebP URLs from Sanity CDN routed through image proxy for universal WebGL CORS compatibility
   const rawUrl = doc.mainImage?.asset?.url || '';
   const cdnUrl = doc.mainImage ? urlFor(doc.mainImage).width(2048).auto('format').quality(85).url() : rawUrl;
   const cdnUrlSm = doc.mainImage ? urlFor(doc.mainImage).width(1024).auto('format').quality(80).url() : cdnUrl;
+
+  const imageUrl = toProxyUrl(cdnUrl);
+  const imageUrlSm = toProxyUrl(cdnUrlSm);
 
   const artistName = doc.artistName || doc.artist?.name || 'Featured Master';
   const yearText = doc.year || 'Contemporary';
@@ -153,8 +162,8 @@ export function mapSanityArtworkTo3D(doc, slotIndex = 0) {
     medium: mediumText,
     description: fullDescription,
     audioText: audioText,
-    imageUrl: cdnUrl,
-    imageUrlSm: cdnUrlSm,
+    imageUrl,
+    imageUrlSm,
     widthIn: effectiveWidthIn,
     heightIn: effectiveHeightIn,
     width: effectiveWidthIn * IN,
