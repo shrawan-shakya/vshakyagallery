@@ -35,36 +35,40 @@ import RoomSidebar from './components/ui/RoomSidebar';
 const AdminModal = lazy(() => import('./components/ui/AdminModal'));
 
 // Fullscreen Luxury Gallery Splash / Loading Screen Overlay
-function FullscreenGalleryLoader() {
+function FullscreenGalleryLoader({ isReady = false }) {
   const { active, progress, item, loaded, total } = useProgress();
   const [mounted, setMounted] = useState(true);
   const [fading, setFading] = useState(false);
 
   useEffect(() => {
-    const isDone = !active || progress >= 98 || (total > 0 && loaded >= total);
-    if (isDone) {
-      const fadeTimer = setTimeout(() => setFading(true), 300);
-      const unmountTimer = setTimeout(() => setMounted(false), 1000);
+    const isDreiDone = !active || progress >= 98 || (total > 0 && loaded >= total);
+    // Dismiss only when BOTH the 3D scene AND the server artworks have arrived
+    if (isReady && isDreiDone) {
+      const fadeTimer = setTimeout(() => setFading(true), 400);
+      const unmountTimer = setTimeout(() => setMounted(false), 1100);
       return () => {
         clearTimeout(fadeTimer);
         clearTimeout(unmountTimer);
       };
     }
-  }, [active, progress, loaded, total]);
+  }, [isReady, active, progress, loaded, total]);
 
-  // Safety fallback: Unmount after 3 seconds max so screen can NEVER freeze or stay blank
+  // Safety fallback: Unmount after 9 seconds max so screen can never freeze indefinitely
   useEffect(() => {
     const safetyTimer = setTimeout(() => {
       setFading(true);
       setTimeout(() => setMounted(false), 700);
-    }, 3000);
+    }, 9000);
     return () => clearTimeout(safetyTimer);
   }, []);
 
   if (!mounted) return null;
 
-  const displayPercent = Math.min(Math.max(Math.round(progress), 0), 100);
-  const itemName = item ? item.split('/').pop() : '3D Architecture & Lighting';
+  const rawPercent = Math.min(Math.max(Math.round(progress), 0), 100);
+  const displayPercent = isReady ? rawPercent : Math.min(Math.round(rawPercent * 0.85), 88);
+  const itemName = !isReady
+    ? 'Fetching Masterpieces from Gallery Vault...'
+    : item ? item.split('/').pop() : '3D Architecture & Lighting';
 
   return (
     <div
@@ -261,7 +265,8 @@ class ErrorBoundary extends React.Component {
 }
 
 export default function App() {
-  const [artworksList, setArtworksList] = useState(fallbackArtworks);
+  const [artworksList, setArtworksList] = useState([]);
+  const [isArtworksLoaded, setIsArtworksLoaded] = useState(false);
   const [roomsList, setRoomsList] = useState([]);
   const [artistsList, setArtistsList] = useState([]);
   const [currentRoomId, setCurrentRoomId] = useState('room-main');
@@ -343,8 +348,15 @@ export default function App() {
 
   // Load artworks for active room
   const loadRoomArtworks = useCallback(async (roomId) => {
-    const list = await fetchArtworksAPI(roomId);
-    setArtworksList(list);
+    try {
+      const list = await fetchArtworksAPI(roomId);
+      setArtworksList(Array.isArray(list) && list.length > 0 ? list : fallbackArtworks);
+    } catch (err) {
+      console.warn('Could not load artworks from API:', err);
+      setArtworksList(fallbackArtworks);
+    } finally {
+      setIsArtworksLoaded(true);
+    }
   }, []);
 
   useEffect(() => {
@@ -482,7 +494,7 @@ export default function App() {
     <main className="relative w-screen h-screen bg-[#060608] overflow-hidden select-none" style={{ width: '100vw', height: '100vh' }}>
       
       {/* Full-screen Luxury Gallery Loading Screen */}
-      <FullscreenGalleryLoader />
+      <FullscreenGalleryLoader isReady={isArtworksLoaded} />
 
       {/* 3D R3F Viewport Canvas */}
       <ErrorBoundary>
