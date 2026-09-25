@@ -80,7 +80,7 @@ export const HALL_LAYOUTS = {
     walls: {
       ...PERIMETER_WALLS,
       partition_front: {
-        name: 'Center Partition (Front)',
+        name: 'Middle Wall (Front)',
         center: [0, ART_HANG_CENTER, 2.2],
         rotation: [0, 0, 0],
         spanMin: -3.2,
@@ -88,13 +88,14 @@ export const HALL_LAYOUTS = {
         axis: 'x',
       },
       partition_back: {
-        name: 'Center Partition (Back)',
+        name: 'Middle Wall (Back)',
         center: [0, ART_HANG_CENTER, 1.8],
         rotation: [0, Math.PI, 0],
         spanMin: -3.2,
         spanMax: 3.2,
         axis: 'x',
       },
+
     },
     lightingPlan: {
       tubeRows: [-5, 0, 5],

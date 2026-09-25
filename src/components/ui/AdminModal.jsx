@@ -45,9 +45,10 @@ const HALL_WALL_META = {
   back: { title: 'Back Wall', label: 'NORTH' },
   left: { title: 'Left Wall', label: 'WEST' },
   right: { title: 'Right Wall', label: 'EAST' },
-  partition_front: { title: 'Partition Front', label: 'ENTRY' },
-  partition_back: { title: 'Partition Back', label: 'CENTER' },
+  partition_front: { title: 'Middle Wall (Front)', label: 'MIDDLE' },
+  partition_back: { title: 'Middle Wall (Back)', label: 'MIDDLE' },
   baffle_a_front: { title: 'Baffle A Front', label: 'CHAPEL I' },
+
   baffle_a_back: { title: 'Baffle A Rear', label: 'CHAPEL I' },
   baffle_b_front: { title: 'Baffle B Front', label: 'CHAPEL II' },
   baffle_b_back: { title: 'Baffle B Rear', label: 'CHAPEL II' },

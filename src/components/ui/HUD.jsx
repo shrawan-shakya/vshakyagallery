@@ -69,8 +69,9 @@ export default function HUD({
     };
   }, []);
 
-  const [musicVolume, setMusicVolume] = useState(0.15);
+  const [musicVolume, setMusicVolume] = useState(0.10);
   const [currentTrack, setCurrentTrack] = useState(() => ambientSoundscape.getCurrentTrack());
+
   const [showVolumeMenu, setShowVolumeMenu] = useState(false);
 
   const handleVolumeChange = (e) => {

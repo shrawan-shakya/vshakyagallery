@@ -10,8 +10,9 @@ class GalleryAmbientMusic {
   constructor() {
     this.audio = null;
     this.isPlaying = false;
-    this.targetVolume = 0.15; // Start at 15% Volume as requested
+    this.targetVolume = 0.10; // Start at 10% Volume as requested
     this.currentTrackIndex = Math.floor(Math.random() * AMBIENT_TRACKS.length);
+
   }
 
   init() {
