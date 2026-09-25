@@ -284,7 +284,18 @@ export const fallbackArtworks = seedArtworks.map((art) => ({
 }));
 
 // Persistent curator artwork overrides key for zero-latency instant updates
-const OVERRIDES_STORAGE_KEY = 'shakya_curator_artworks_v3';
+const OVERRIDES_STORAGE_KEY = 'shakya_curator_artworks_v4';
+
+// One-time auto-purge on client load to clear any stale or fallback-corrupted overrides
+if (typeof window !== 'undefined') {
+  try {
+    localStorage.removeItem('shakya_curator_artworks_v3');
+    localStorage.removeItem('shakya_curator_artworks_v2');
+    localStorage.removeItem('shakya_curator_artworks_v1');
+  } catch {
+    /* ignore */
+  }
+}
 
 export function getLocalArtworkOverrides() {
   if (typeof window === 'undefined') return {};
@@ -383,9 +394,19 @@ export async function fetchArtworksAPI(roomId = null) {
       if (art.sanityId) overriddenIds.add(art.sanityId);
       const wIn = override.widthIn !== undefined ? parseFloat(override.widthIn) : art.widthIn;
       const hIn = override.heightIn !== undefined ? parseFloat(override.heightIn) : art.heightIn;
+      // Ensure the authentic artwork image is never clobbered by a generic database default
+      const finalImageUrl = (override.imageUrl && !override.imageUrl.includes('starry-horizon'))
+        ? override.imageUrl
+        : art.imageUrl;
+      const finalImageUrlSm = (override.imageUrlSm && !override.imageUrlSm.includes('starry-horizon'))
+        ? override.imageUrlSm
+        : art.imageUrlSm;
+
       return {
         ...art,
         ...override,
+        imageUrl: finalImageUrl,
+        imageUrlSm: finalImageUrlSm,
         position: override.position || art.position,
         rotation: override.rotation || art.rotation,
         wallId: override.wallId || art.wallId,

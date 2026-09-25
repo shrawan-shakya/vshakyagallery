@@ -886,8 +886,13 @@ app.put('/api/artworks/:id', writeLimiter, requireAdmin, handleUpload('image'), 
     let finalWidthIn = parseFloat(widthIn) || (existing ? existing.width_in : 48);
     let finalHeightIn = parseFloat(heightIn) || (existing ? existing.height_in : 36);
 
-    let imageUrl = existing ? existing.image_url : '/artworks/starry-horizon.jpg';
-    let imageUrlSm = existing ? existing.image_url_sm : null;
+    let imageUrl = req.body.imageUrl || (existing ? existing.image_url : null);
+    let imageUrlSm = req.body.imageUrlSm || (existing ? existing.image_url_sm : null);
+
+    // Only fallback to seed image if completely absent and no new image file was uploaded
+    if (!imageUrl && !req.file) {
+      imageUrl = (existing && existing.image_url) ? existing.image_url : '/artworks/starry-horizon.jpg';
+    }
 
     // A replacement image: re-encode it, then drop the previous local files
     if (req.file) {

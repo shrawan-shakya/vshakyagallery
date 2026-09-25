@@ -405,6 +405,8 @@ export default function AdminModal({
     try {
       const formData = new FormData();
       if (file) formData.append('image', file);
+      if (editingArtwork?.imageUrl) formData.append('imageUrl', editingArtwork.imageUrl);
+      if (editingArtwork?.imageUrlSm) formData.append('imageUrlSm', editingArtwork.imageUrlSm);
       formData.append('title', title);
       formData.append('artist', artist);
       formData.append('year', year);
@@ -458,22 +460,38 @@ export default function AdminModal({
 
       const savedArt = await res.json().catch(() => null);
 
+      // Preserve authentic artwork image — never allow generic fallback to replace it
+      const preservedImageUrl = (editingArtwork?.imageUrl && !editingArtwork.imageUrl.includes('starry-horizon'))
+        ? editingArtwork.imageUrl
+        : (savedArt?.imageUrl && !savedArt.imageUrl.includes('starry-horizon'))
+        ? savedArt.imageUrl
+        : (previewUrl || fileDataUrl);
+
+      const preservedImageUrlSm = (editingArtwork?.imageUrlSm && !editingArtwork.imageUrlSm.includes('starry-horizon'))
+        ? editingArtwork.imageUrlSm
+        : (savedArt?.imageUrlSm && !savedArt.imageUrlSm.includes('starry-horizon'))
+        ? savedArt.imageUrlSm
+        : null;
+
       // Persist to local override storage immediately so the 3D gallery updates with 0ms latency
-      const updatedObj = savedArt || {
-        id: editingArtwork ? editingArtwork.id : `artwork-${Date.now()}`,
-        sanityId: editingArtwork?.sanityId,
+      const updatedObj = {
+        ...(editingArtwork || {}),
+        ...(savedArt || {}),
+        id: editingArtwork ? editingArtwork.id : (savedArt?.id || `artwork-${Date.now()}`),
+        sanityId: editingArtwork?.sanityId || savedArt?.sanityId,
         title,
         artist,
         year,
         medium,
         description,
-        widthIn: parseFloat(widthIn) || 48,
-        heightIn: parseFloat(heightIn) || 36,
+        widthIn: parseFloat(widthIn) || editingArtwork?.widthIn || 48,
+        heightIn: parseFloat(heightIn) || editingArtwork?.heightIn || 36,
         roomId: selectedRoomId || 'room-main',
         wallId: selectedWallId,
         position: [posX, heightMeters, posZ],
         rotation: [0, rotY, 0],
-        imageUrl: previewUrl || fileDataUrl,
+        imageUrl: preservedImageUrl,
+        imageUrlSm: preservedImageUrlSm,
       };
       saveLocalArtworkOverride(updatedObj);
 
