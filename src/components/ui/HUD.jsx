@@ -69,7 +69,8 @@ export default function HUD({
     };
   }, []);
 
-  const [musicVolume, setMusicVolume] = useState(0.8);
+  const [musicVolume, setMusicVolume] = useState(0.5);
+  const [currentTrack, setCurrentTrack] = useState(() => ambientSoundscape.getCurrentTrack());
   const [showVolumeMenu, setShowVolumeMenu] = useState(false);
 
   const handleVolumeChange = (e) => {
@@ -236,6 +237,26 @@ export default function HUD({
                     onChange={handleVolumeChange}
                     className="w-full accent-[#D4AF37] h-1.5 bg-white/20 rounded-none cursor-pointer"
                   />
+                </div>
+
+                {/* Track Info & Shuffle */}
+                <div className="pt-2 border-t border-white/10 flex flex-col gap-1.5">
+                  <div className="text-[9px] font-mono text-slate-400 flex items-center justify-between">
+                    <span className="truncate max-w-[120px] text-slate-300">
+                      ♪ {currentTrack?.title || 'Ambient Soundscape'}
+                    </span>
+                    <button
+                      onClick={() => {
+                        ambientSoundscape.playNextTrack();
+                        setCurrentTrack(ambientSoundscape.getCurrentTrack());
+                        setIsMusicPlaying(true);
+                      }}
+                      className="text-[9px] px-1.5 py-0.5 border border-white/10 hover:border-[#D4AF37] text-slate-400 hover:text-[#D4AF37] uppercase transition-all"
+                      title="Play Next Track"
+                    >
+                      Next ⏭
+                    </button>
+                  </div>
                 </div>
               </div>
             )}

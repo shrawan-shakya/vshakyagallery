@@ -1,19 +1,59 @@
 // High Quality Gallery Ambient Music Engine
-// Uses HTML5 Audio with local ambient soundscape track
+// Uses HTML5 Audio with multi-track randomized ambient soundscape
+
+export const AMBIENT_TRACKS = [
+  { id: 'track-1', src: '/audio/track-1.mp3', title: 'Serenade of Silence' },
+  { id: 'track-2', src: '/audio/track-2.mp3', title: 'Himalayan Whispers' },
+];
 
 class GalleryAmbientMusic {
   constructor() {
     this.audio = null;
     this.isPlaying = false;
-    this.targetVolume = 0.8; // Default 80% Volume
+    this.targetVolume = 0.5; // Start at 50% Volume as requested
+    this.currentTrackIndex = Math.floor(Math.random() * AMBIENT_TRACKS.length);
   }
 
   init() {
     if (this.audio) return;
     this.audio = new Audio();
-    this.audio.loop = true;
+    this.audio.preload = 'none'; // Only stream bytes when visitor plays audio to keep server/client light
     this.audio.volume = 0;
-    this.audio.src = '/audio/gallery-ambient.mp3';
+
+    // Pick random track on startup
+    const track = AMBIENT_TRACKS[this.currentTrackIndex];
+    this.audio.src = track.src;
+
+    // When the track ends, automatically crossfade into another random track
+    this.audio.onended = () => {
+      this.playNextTrack();
+    };
+  }
+
+  getCurrentTrack() {
+    return AMBIENT_TRACKS[this.currentTrackIndex] || AMBIENT_TRACKS[0];
+  }
+
+  playNextTrack() {
+    // Pick next track (alternating or random if more than 2)
+    const nextIndex = (this.currentTrackIndex + 1) % AMBIENT_TRACKS.length;
+    this.currentTrackIndex = nextIndex;
+    const nextTrack = AMBIENT_TRACKS[nextIndex];
+
+    if (this.audio) {
+      this.audio.src = nextTrack.src;
+      this.audio.volume = 0;
+      const playPromise = this.audio.play();
+      if (playPromise !== undefined) {
+        playPromise
+          .then(() => {
+            this.fadeVolume(this.targetVolume, 1500);
+          })
+          .catch((err) => {
+            console.warn('Playback notice:', err.message);
+          });
+      }
+    }
   }
 
   start() {
@@ -35,7 +75,7 @@ class GalleryAmbientMusic {
   stop() {
     if (!this.audio) return;
     this.isPlaying = false;
-    this.fadeVolume(0, 800, () => {
+    this.fadeVolume(0, 600, () => {
       this.audio.pause();
     });
   }
