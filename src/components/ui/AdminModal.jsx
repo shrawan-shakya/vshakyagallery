@@ -22,9 +22,10 @@ import {
   LogOut,
   RefreshCw
 } from 'lucide-react';
-import { getHallOptions, getWallConfigs } from '../../utils/hallLayouts';
+import { getHallOptions, getWallConfigs, getSlotPlan } from '../../utils/hallLayouts';
 import { ART_HANG_CENTER } from '../../constants';
 import { saveLocalArtworkOverride, removeLocalArtworkOverride, clearLocalArtworkOverrides } from '../../data/artworks';
+import WallPositionRail from './WallPositionRail';
 
 const HEIGHT_PRESETS = [
   { id: 'low', label: 'Low (1.4m)', height: 1.4, icon: ArrowDown },
@@ -52,30 +53,47 @@ const HALL_WALL_META = {
   baffle_b_back: { title: 'Baffle B Rear', label: 'CHAPEL II' },
 };
 
-// Wall slot presets derived from the wall's real span in the active hall:
-// center-out ordering, so a lone artwork hangs dead-center (museum standard)
-// and extra pieces fill symmetric columns after.
+// Wall slot presets derived directly from the hall architecture's slotPlan
+// Ordered left-to-right along the wall for natural human museum curating
 function presetsForWall(wallId, hallLayoutId) {
-  const defs = getWallConfigs(hallLayoutId);
-  const def = defs[wallId] || defs.back;
-  const mid = (def.spanMin + def.spanMax) / 2;
-  const span = def.spanMax - def.spanMin;
-  const clamp = (o) =>
-    Math.round(Math.min(Math.max(o, def.spanMin + 0.3), def.spanMax - 0.3) * 100) / 100;
+  const plan = getSlotPlan(hallLayoutId);
+  const wallSlots = plan?.[wallId] || [0];
 
-  const offsets = [clamp(mid), clamp(mid - span * 0.15), clamp(mid + span * 0.15), clamp(mid - span * 0.45), clamp(mid + span * 0.45)];
-  const seen = new Set();
-  const unique = offsets.filter((o) => (seen.has(o) ? false : seen.add(o)));
-  const icons = [Circle, ArrowLeft, ArrowRight, ArrowLeft, ArrowRight];
-  const labels = ['Center', 'Inner L', 'Inner R', 'Outer L', 'Outer R'];
+  return wallSlots.map((offset, i) => {
+    let label = 'Center';
+    let icon = Circle;
+    if (offset < -0.1) {
+      icon = ArrowLeft;
+      const countLeft = wallSlots.filter((s) => s < -0.1).length;
+      const rank = wallSlots.filter((s) => s < -0.1).indexOf(offset);
+      if (countLeft >= 3) {
+        label = rank === 0 ? 'Far L' : rank === 1 ? 'Mid L' : 'Inner L';
+      } else if (countLeft === 2) {
+        label = rank === 0 ? 'Outer L' : 'Inner L';
+      } else {
+        label = 'Left';
+      }
+    } else if (offset > 0.1) {
+      icon = ArrowRight;
+      const countRight = wallSlots.filter((s) => s > 0.1).length;
+      const rank = wallSlots.filter((s) => s > 0.1).indexOf(offset);
+      if (countRight >= 3) {
+        label = rank === countRight - 1 ? 'Far R' : rank === countRight - 2 ? 'Mid R' : 'Inner R';
+      } else if (countRight === 2) {
+        label = rank === 1 ? 'Outer R' : 'Inner R';
+      } else {
+        label = 'Right';
+      }
+    }
 
-  return unique.map((offset, i) => ({
-    id: `${wallId}-${i}`,
-    label: labels[i] || `Slot ${i}`,
-    meter: `${offset.toFixed(2)}m`,
-    offset,
-    icon: icons[Math.min(i, icons.length - 1)],
-  }));
+    return {
+      id: `${wallId}-${i}`,
+      label,
+      meter: `${offset >= 0 ? '+' : ''}${offset.toFixed(2)}m`,
+      offset,
+      icon,
+    };
+  });
 }
 
 // Hall architecture options for the room-creation form
@@ -232,16 +250,24 @@ export default function AdminModal({
   );
 
   // Check if a position along the selected wall is already occupied by an artwork
-  const getOccupyingArtwork = useCallback((slotOffset) => {
+  const getOccupyingArtwork = useCallback((slotOffset, requestedWidthIn = null) => {
     const def = targetWallDefs[selectedWallId] || targetWallDefs.back;
+    const reqWidthM = Math.max(0.4, (parseFloat(requestedWidthIn || widthIn) || 36) * 0.0254 * 1.4);
+    const halfReq = reqWidthM / 2;
+
     return activeRoomArtworks.find(a => {
-      if (editingArtwork && a.id === editingArtwork.id) return false;
+      if (editingArtwork && (a.id === editingArtwork.id || a.sanityId === editingArtwork.id)) return false;
       if (a.wallId !== selectedWallId) return false;
       const isXAxis = def.axis === 'x';
-      const currentOffset = isXAxis ? (a.position?.[0] ?? 0) : (a.position?.[2] ?? 0);
-      return Math.abs(currentOffset - slotOffset) < 1.2;
+      const artOffset = isXAxis ? (a.position?.[0] ?? 0) : (a.position?.[2] ?? 0);
+      const artWidthM = Math.max(0.4, (parseFloat(a.widthIn) || 36) * 0.0254 * (a.scale || 1.4));
+      const halfArt = artWidthM / 2;
+
+      // Collides if distance between centers is less than half widths + 0.15m buffer
+      const minDistance = halfReq + halfArt + 0.15;
+      return Math.abs(artOffset - slotOffset) < minDistance;
     });
-  }, [activeRoomArtworks, selectedWallId, targetWallDefs, editingArtwork]);
+  }, [activeRoomArtworks, selectedWallId, targetWallDefs, editingArtwork, widthIn]);
 
   // Keep the chosen wall valid for the targeted room's hall architecture
   useEffect(() => {
@@ -392,14 +418,14 @@ export default function AdminModal({
       const slotObj = wallSlotPresets.find(s => s.id === selectedSlot) || wallSlotPresets[0];
       const heightObj = HEIGHT_PRESETS.find(h => h.id === selectedHeight) || HEIGHT_PRESETS[1];
 
-      const offsetMeters = showAdvancedPlacement ? customOffsetNum : (slotObj ? slotObj.offset : 0);
+      const offsetMeters = typeof customOffsetNum === 'number' ? customOffsetNum : (slotObj ? slotObj.offset : 0);
       const heightMeters = showAdvancedPlacement ? customHeightNum : heightObj.height;
 
-      const occupyingArt = getOccupyingArtwork(offsetMeters);
+      const occupyingArt = getOccupyingArtwork(offsetMeters, widthIn);
       if (occupyingArt) {
         setStatusMsg({
           type: 'error',
-          text: `Position is already occupied by "${occupyingArt.title}". Please choose an available open slot.`
+          text: `Position (${offsetMeters.toFixed(2)}m) physically overlaps with "${occupyingArt.title}". Please adjust the position slider or select an empty slot.`
         });
         setIsUploading(false);
         return;
@@ -812,9 +838,19 @@ export default function AdminModal({
 
               {/* Room Selector */}
               <div>
-                <label className="block text-[10px] font-bold uppercase tracking-luxury-wide text-slate-400 mb-1">
-                  Gallery Room Wing
-                </label>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="block text-[10px] font-bold uppercase tracking-luxury-wide text-slate-400">
+                    Gallery Room Wing
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() => setActiveTab('rooms')}
+                    className="text-[9px] font-mono text-[#D4AF37] hover:underline flex items-center gap-1"
+                  >
+                    <FolderPlus className="w-3 h-3" />
+                    + Manage / Create New Wing
+                  </button>
+                </div>
                 <select 
                   value={selectedRoomId}
                   onChange={(e) => setSelectedRoomId(e.target.value)}
@@ -864,64 +900,35 @@ export default function AdminModal({
                 </div>
               </div>
 
-              {/* STEP 2: CHOOSE POSITION ALONG WALL */}
+              {/* STEP 2: VISUAL WALL POSITION RAIL & SLOTS */}
               <div className="space-y-2.5">
                 <div className="flex justify-between items-center">
                   <label className="block text-[10px] font-bold uppercase tracking-luxury-wide text-[#D4AF37]">
                     Step 2: Choose Position Along Wall
                   </label>
                   <span className="text-[9px] font-mono text-slate-400">
-                    {wallSlotPresets.length} Slots
+                    Wall: {targetWallDefs[selectedWallId]?.name || selectedWallId}
                   </span>
                 </div>
-                
-                <div className={`grid gap-2.5 ${wallSlotPresets.length === 5 ? 'grid-cols-2 sm:grid-cols-5' : 'grid-cols-3'}`}>
-                  {wallSlotPresets.map((slot) => {
-                    const Icon = slot.icon;
-                    const isSelected = (selectedSlot === slot.id || Math.abs(customOffsetNum - slot.offset) < 0.1) && !showAdvancedPlacement;
-                    const occupyingArt = getOccupyingArtwork(slot.offset);
-                    const isOccupied = !!occupyingArt;
 
-                    return (
-                      <button
-                        type="button"
-                        key={slot.id}
-                        disabled={isOccupied}
-                        onClick={() => {
-                          if (isOccupied) return;
-                          setSelectedSlot(slot.id);
-                          setCustomOffsetNum(slot.offset);
-                          setShowAdvancedPlacement(false);
-                        }}
-                        className={`py-2 px-1.5 rounded-none border text-xs font-bold uppercase tracking-luxury-wide flex flex-col items-center justify-center gap-0.5 transition-all relative ${
-                          isOccupied
-                            ? 'bg-red-950/20 border-red-500/30 text-red-400/60 cursor-not-allowed opacity-65'
-                            : isSelected
-                            ? 'bg-[#D4AF37] text-[#111111] border-[#D4AF37] font-extrabold shadow-md'
-                            : 'bg-[#181818] border-white/10 text-slate-300 hover:border-[#D4AF37]/50 hover:text-[#FAFAFA]'
-                        }`}
-                        title={isOccupied ? `Occupied by "${occupyingArt.title}"` : `Position: ${slot.offset}m along wall`}
-                      >
-                        <div className="flex items-center gap-1 max-w-full">
-                          <Icon className="w-3 h-3 shrink-0" />
-                          <span className="truncate">{slot.label}</span>
-                        </div>
-                        <span className={`text-[9px] font-mono leading-none ${isSelected ? 'text-[#111111]/80' : isOccupied ? 'text-red-400/60' : 'text-slate-400'}`}>
-                          {slot.meter}
-                        </span>
-                        {isOccupied ? (
-                          <span className="text-[8px] font-mono text-red-400 truncate max-w-full px-1">
-                            Taken: {occupyingArt.title}
-                          </span>
-                        ) : (
-                          <span className={`text-[8px] font-mono uppercase ${isSelected ? 'text-[#111111]/70' : 'text-[#D4AF37]'}`}>
-                            {isSelected ? 'Selected' : 'Available'}
-                          </span>
-                        )}
-                      </button>
-                    );
-                  })}
-                </div>
+                <WallPositionRail
+                  wallDef={targetWallDefs[selectedWallId] || targetWallDefs.back}
+                  currentOffset={customOffsetNum}
+                  onOffsetChange={(newOffset) => {
+                    setCustomOffsetNum(newOffset);
+                    const matchingPreset = wallSlotPresets.find((p) => Math.abs(p.offset - newOffset) < 0.1);
+                    setSelectedSlot(matchingPreset ? matchingPreset.id : 'custom');
+                  }}
+                  existingArtworks={activeRoomArtworks.filter((a) => a.wallId === selectedWallId)}
+                  editingArtworkId={editingArtwork?.id}
+                  artworkWidthIn={widthIn}
+                  artworkTitle={title}
+                  artworkThumbnail={previewUrl || fileDataUrl}
+                  presets={wallSlotPresets}
+                  onSelectPreset={(slotId) => {
+                    setSelectedSlot(slotId);
+                  }}
+                />
               </div>
 
               {/* STEP 3: CHOOSE HANGING HEIGHT PRESET */}

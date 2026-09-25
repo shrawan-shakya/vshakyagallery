@@ -150,11 +150,13 @@ export function mapSanityArtworkTo3D(doc, slotIndex = 0) {
   const fullDescription = storyText || `${doc.title} by ${artistName}. ${mediumText}, ${yearText}. ${priceDisplay}.`;
   const audioText = `${doc.title} by ${artistName}, ${yearText}. ${mediumText}. ${storyText || ''}`;
 
+  const assignedRoomId = doc.virtualGallery?.roomId || (slotIndex < HALL_SLOTS.length ? 'room-main' : `room-wing-${Math.floor(slotIndex / HALL_SLOTS.length) + 1}`);
+
   return {
     id: doc._id,
     sanityId: doc._id,
     sku: doc.sku || '',
-    roomId: 'room-main',
+    roomId: assignedRoomId,
     artistId: doc.artist?._id || 'artist-group',
     title: doc.title || 'Untitled Artwork',
     artist: artistName,

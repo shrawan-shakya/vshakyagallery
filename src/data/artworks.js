@@ -355,17 +355,55 @@ export async function fetchArtworksAPI(roomId = null) {
 }
 
 /**
- * Fetch list of rooms from Express REST API
+ * Fetch list of rooms from Express REST API with dynamic Sanity gallery wing discovery
  */
 export async function fetchRoomsAPI() {
+  const roomMap = new Map();
+
+  // 1. Try fetching configured rooms from backend API
   try {
     const res = await fetch(`/api/rooms?_t=${Date.now()}`, { cache: 'no-store' });
-    if (!res.ok) throw new Error(`API error: ${res.statusText}`);
-    return await res.json();
+    if (res.ok) {
+      const dbRooms = await res.json();
+      if (Array.isArray(dbRooms)) {
+        dbRooms.forEach((r) => roomMap.set(r.id, r));
+      }
+    }
   } catch (err) {
     console.warn('Could not fetch rooms from API:', err);
-    return [{ id: 'room-main', title: 'Main Permanent Exhibition', artist_name: 'Shakya Gallery Masters' }];
   }
+
+  // 2. Ensure main default gallery exists
+  if (!roomMap.has('room-main')) {
+    roomMap.set('room-main', {
+      id: 'room-main',
+      title: 'Main Permanent Exhibition',
+      artist_name: 'Shakya Gallery Masters',
+      hall_layout: 'classic',
+    });
+  }
+
+  // 3. Scan Sanity artworks to see if any artworks are assigned to secondary wings
+  try {
+    const sanityArtworks = await fetchSanityArtworks();
+    if (Array.isArray(sanityArtworks)) {
+      sanityArtworks.forEach((art) => {
+        if (art.roomId && !roomMap.has(art.roomId)) {
+          const isWing2 = art.roomId === 'room-wing-2';
+          roomMap.set(art.roomId, {
+            id: art.roomId,
+            title: isWing2 ? 'Pavilion Wing II' : `Gallery Wing (${art.roomId})`,
+            artist_name: 'Shakya Gallery Masters',
+            hall_layout: 'classic',
+          });
+        }
+      });
+    }
+  } catch (sanityErr) {
+    // ignore
+  }
+
+  return Array.from(roomMap.values());
 }
 
 /**
