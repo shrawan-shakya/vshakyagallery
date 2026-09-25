@@ -11,7 +11,7 @@ const OVERVIEW_TARGET = new THREE.Vector3(0, 1.8, -1.0);
 const tmpPos = new THREE.Vector3();
 const tmpTgt = new THREE.Vector3();
 
-export default function GalleryCamera({ selectedArtwork, isSeated = false, artworks = [], disabled = false }) {
+export default function GalleryCamera({ selectedArtwork, isSeated = false, artworks = [], disabled = false, resetSignal = 0 }) {
   const controlsRef = useRef();
   const flight = useRef(null);
   const savedView = useRef(null); // where the user was before flying to a painting
@@ -86,6 +86,13 @@ export default function GalleryCamera({ selectedArtwork, isSeated = false, artwo
       beginFlight(OVERVIEW_POS, OVERVIEW_TARGET);
     }
   }, [selectedArtwork, isSeated, artworks, disabled, beginFlight, camera]);
+
+  useEffect(() => {
+    if (resetSignal > 0) {
+      savedView.current = null;
+      beginFlight(OVERVIEW_POS, OVERVIEW_TARGET);
+    }
+  }, [resetSignal, beginFlight]);
 
   useFrame((_, rawDelta) => {
     const f = flight.current;

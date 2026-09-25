@@ -120,6 +120,7 @@ export default function WalkControls({
   isSeated,
   onStandUp,
   transitionSignal,
+  onExitDone,
   onTransitionDone,
   fadeRef,
   onEnterPortal,
@@ -295,6 +296,14 @@ export default function WalkControls({
   // facing the open doors and glide into the new room.
   useEffect(() => {
     if (!transitionSignal || !transitionSignal.id) return;
+
+    // When the room has finished loading everything, signal the transition to enter
+    if (transitionSignal.ready && transit.current?.phase === 'waiting') {
+      transit.current.phase = 'enter';
+      transit.current.t = 0;
+      return;
+    }
+
     if (transit.current) return;
 
     if (isSeated) onStandUp?.();
@@ -309,13 +318,16 @@ export default function WalkControls({
 
     const px = camera.position.x;
     const pz = camera.position.z;
+    const isNearDoor = pz > 6.0;
+
     transit.current = {
       phase: 'exit',
       t: 0,
       from: { x: px, y: camera.position.y, z: pz, yaw: yaw.current, pitch: pitch.current },
       exitX: THREE.MathUtils.clamp(px * 0.22, -0.85, 0.85),
-      exitDur: 0.9,
+      exitDur: isNearDoor ? 0.8 : 0.35,
       enterDur: 1.1,
+      isNearDoor,
     };
   }, [transitionSignal, camera, isSeated, onStandUp, onFocusChange]);
 
@@ -561,20 +573,24 @@ export default function WalkControls({
       if (T.phase === 'exit') {
         T.t += dt;
         const e = easeInOut(Math.min(T.t / T.exitDur, 1));
-        camera.position.set(
-          THREE.MathUtils.lerp(T.from.x, T.exitX, e),
-          THREE.MathUtils.lerp(T.from.y, EYE_HEIGHT, e),
-          THREE.MathUtils.lerp(T.from.z, EXIT_END_Z, e),
-        );
-        const wy = T.from.yaw + angleDelta(Math.PI, T.from.yaw) * e;
-        const wp = T.from.pitch + (0 - T.from.pitch) * e;
-        camera.quaternion.setFromEuler(_EULER.set(wp, wy, 0));
-
-        // Darken as the doorway approaches; fully black past the threshold
-        setFade(THREE.MathUtils.clamp((camera.position.z - 9.35) / 1.15, 0, 1));
+        if (T.isNearDoor) {
+          camera.position.set(
+            THREE.MathUtils.lerp(T.from.x, T.exitX, e),
+            THREE.MathUtils.lerp(T.from.y, EYE_HEIGHT, e),
+            THREE.MathUtils.lerp(T.from.z, EXIT_END_Z, e),
+          );
+          const wy = T.from.yaw + angleDelta(Math.PI, T.from.yaw) * e;
+          const wp = T.from.pitch + (0 - T.from.pitch) * e;
+          camera.quaternion.setFromEuler(_EULER.set(wp, wy, 0));
+          // Darken as the doorway approaches; fully black past the threshold
+          setFade(THREE.MathUtils.clamp((camera.position.z - 9.35) / 1.15, 0, 1));
+        } else {
+          // Direct smooth fade to black
+          setFade(Math.min(T.t / T.exitDur, 1));
+        }
 
         if (T.t >= T.exitDur) {
-          // Through the doors — reappear in the vestibule facing the room
+          // Screen dark — position in the vestibule facing into the room
           camera.position.set(0, EYE_HEIGHT, ENTER_START_Z);
           yaw.current = ENTER_FINAL_YAW;
           pitch.current = ENTER_FINAL_PITCH;
@@ -582,9 +598,19 @@ export default function WalkControls({
           curPitch.current = ENTER_FINAL_PITCH;
           headRollZ.current = 0;
           stepTimer.current = 0;
-          T.phase = 'enter';
+          setFade(1);
+          T.phase = 'waiting';
           T.t = 0;
+          onExitDone?.();
         }
+        return;
+      }
+
+      if (T.phase === 'waiting') {
+        // Hold camera position and black fade while room assets and textures load
+        camera.position.set(0, EYE_HEIGHT, ENTER_START_Z);
+        camera.quaternion.setFromEuler(_EULER.set(ENTER_FINAL_PITCH, ENTER_FINAL_YAW, 0));
+        setFade(1);
         return;
       }
 

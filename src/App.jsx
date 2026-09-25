@@ -31,6 +31,13 @@ import VirtualJoystick from './components/ui/VirtualJoystick';
 import ArtworkModal from './components/ui/ArtworkModal';
 import HoverHint from './components/ui/HoverHint';
 import RoomSidebar from './components/ui/RoomSidebar';
+import RoomTransitionLoader from './components/ui/RoomTransitionLoader';
+import { preloadArtworks, clearTextureCacheExcept } from './utils/texturePreloader';
+
+// Enable Three.js internal asset cache
+if (typeof window !== 'undefined') {
+  THREE.Cache.enabled = true;
+}
 
 // Curator-only panel: its chunk is only fetched the first time it is opened
 const AdminModal = lazy(() => import('./components/ui/AdminModal'));
@@ -361,12 +368,17 @@ export default function App() {
     }
   }, []);
 
+  const initialRoomRef = useRef(null);
+
   useEffect(() => {
     loadMetadata();
   }, [loadMetadata]);
 
   useEffect(() => {
-    loadRoomArtworks(activeRoomId);
+    if (initialRoomRef.current !== activeRoomId) {
+      initialRoomRef.current = activeRoomId;
+      loadRoomArtworks(activeRoomId);
+    }
   }, [activeRoomId, loadRoomArtworks]);
 
   const refreshAllData = useCallback(() => {
@@ -455,18 +467,197 @@ export default function App() {
     setMode((m) => (m === 'orbit' ? 'walk' : 'orbit'));
   };
 
-  const handleSelectRoom = (roomId) => {
-    setSelectedArtwork(null);
-    setCurrentRoomId(roomId);
-    if (mode === 'walk') {
-      const room = roomsList.find((r) => r.id === roomId);
-      transitionIdRef.current += 1;
-      setRoomTransition({ id: transitionIdRef.current, title: room?.title ?? '' });
+  const isSwitchingRef = useRef(false);
+  const pendingExitDoneRef = useRef(null);
+
+  const executeRoomLoad = useCallback(async (roomId, targetRoom, transId) => {
+    try {
+      // Step 1: Fetch artworks from API
+      setRoomTransition((prev) =>
+        prev && prev.id === transId
+          ? { ...prev, progress: 25, status: 'Accessing Exhibition Vault...' }
+          : prev
+      );
+
+      let list = fallbackArtworks;
+      try {
+        const apiArtworks = await fetchArtworksAPI(roomId);
+        if (Array.isArray(apiArtworks) && apiArtworks.length > 0) {
+          list = apiArtworks;
+        }
+      } catch (err) {
+        console.warn('Could not load artworks from API during room switch:', err);
+      }
+
+      if (transitionIdRef.current !== transId) return;
+
+      // Step 2: Compute hall architecture layout
+      const hallLayout = targetRoom?.hall_layout || 'classic';
+      const adapted = adaptArtworksToHall(list, hallLayout);
+
+      // Step 3: Preload all artwork image textures
+      setRoomTransition((prev) =>
+        prev && prev.id === transId
+          ? { ...prev, progress: 35, status: 'Preloading Masterpieces...' }
+          : prev
+      );
+
+      await preloadArtworks(
+        adapted,
+        quality.anisotropy,
+        quality.maxTextureSide,
+        (done, total, title) => {
+          if (transitionIdRef.current !== transId) return;
+          const p = Math.round(35 + (done / Math.max(total, 1)) * 52);
+          setRoomTransition((prev) =>
+            prev && prev.id === transId
+              ? {
+                  ...prev,
+                  progress: p,
+                  status: `Loading Masterpiece ${done} of ${total}...`,
+                  itemDetail: title,
+                }
+              : prev
+          );
+        }
+      );
+
+      if (transitionIdRef.current !== transId) return;
+
+      // Step 4: Clean up unused textures & commit React state
+      setRoomTransition((prev) =>
+        prev && prev.id === transId
+          ? {
+              ...prev,
+              progress: 92,
+              status: 'Arranging Gallery Architecture & Spotlights...',
+              itemDetail: '',
+            }
+          : prev
+      );
+
+      clearTextureCacheExcept(
+        adapted.map((a) => a.localDataUrl || a.imageUrlSm || a.imageUrl)
+      );
+
+      // Prevent the initialRoomRef effect from redundant reload
+      initialRoomRef.current = roomId;
+      setCurrentRoomId(roomId);
+      setArtworksList(list);
+
+      // In orbit mode, reset camera to overview
+      if (mode === 'orbit') {
+        setResetSignal((c) => c + 1);
+      }
+
+      // Step 5: Wait 2 animation frames + delay to allow Three.js to render the new room and shadows in place
+      await new Promise((resolve) => {
+        requestAnimationFrame(() => {
+          requestAnimationFrame(() => {
+            setTimeout(resolve, 180);
+          });
+        });
+      });
+
+      if (transitionIdRef.current !== transId) return;
+
+      // Step 6: Ready! Signal WalkControls that entrance glide can begin
+      setRoomTransition((prev) =>
+        prev && prev.id === transId
+          ? { ...prev, progress: 100, status: 'Exhibition Ready', ready: true }
+          : prev
+      );
+
+      // Hold at 100% for 220ms so user has a smooth visual completion beat
+      await new Promise((r) => setTimeout(r, 220));
+
+      if (transitionIdRef.current !== transId) return;
+
+      // Step 7: Fade out overlay
+      setRoomTransition((prev) =>
+        prev && prev.id === transId ? { ...prev, fading: true } : prev
+      );
+
+      setTimeout(() => {
+        if (transitionIdRef.current === transId) {
+          setRoomTransition(null);
+          isSwitchingRef.current = false;
+        }
+      }, 550);
+    } catch (e) {
+      console.error('Error during room switch:', e);
+      setRoomTransition(null);
+      isSwitchingRef.current = false;
     }
-  };
+  }, [quality.anisotropy, quality.maxTextureSide, mode]);
+
+  const handleSelectRoom = useCallback(
+    (roomId) => {
+      if (roomId === activeRoomId && !roomTransition) {
+        setIsRoomSidebarOpen(false);
+        return;
+      }
+      if (isSwitchingRef.current) return;
+      isSwitchingRef.current = true;
+
+      setSelectedArtwork(null);
+      setIsRoomSidebarOpen(false);
+      setIsSeated(false);
+      if (document.pointerLockElement) {
+        document.exitPointerLock();
+      }
+
+      const room = roomsList.find((r) => r.id === roomId) || { id: roomId, title: 'Gallery Wing' };
+      transitionIdRef.current += 1;
+      const transId = transitionIdRef.current;
+
+      setRoomTransition({
+        id: transId,
+        targetRoomId: roomId,
+        targetRoom: room,
+        title: room?.title || 'Gallery Wing',
+        artist: room?.artist_name || '',
+        progress: 10,
+        status: 'Entering Gallery Wing...',
+        itemDetail: '',
+        ready: false,
+        fading: false,
+      });
+
+      if (mode === 'walk') {
+        // Walk mode: WalkControls handles doorway glide / fade-to-black and calls onExitDone
+        let called = false;
+        pendingExitDoneRef.current = () => {
+          if (called) return;
+          called = true;
+          executeRoomLoad(roomId, room, transId);
+        };
+        setTimeout(() => {
+          if (!called && transitionIdRef.current === transId) {
+            called = true;
+            executeRoomLoad(roomId, room, transId);
+          }
+        }, 1200);
+      } else {
+        // Orbit mode: short fade-in pause (300ms) then execute load
+        setTimeout(() => {
+          executeRoomLoad(roomId, room, transId);
+        }, 300);
+      }
+    },
+    [activeRoomId, roomTransition, roomsList, mode, executeRoomLoad]
+  );
+
+  const handleExitDone = useCallback(() => {
+    if (pendingExitDoneRef.current) {
+      const fn = pendingExitDoneRef.current;
+      pendingExitDoneRef.current = null;
+      fn();
+    }
+  }, []);
 
   const handleTransitionDone = useCallback(() => {
-    setRoomTransition(null);
+    // Room enter animation finished
   }, []);
 
   // Find next room for 3D portal
@@ -585,6 +776,7 @@ export default function App() {
                 isSeated={isSeated}
                 onStandUp={handleStandUp}
                 transitionSignal={roomTransition}
+                onExitDone={handleExitDone}
                 onTransitionDone={handleTransitionDone}
                 fadeRef={fadeRef}
                 onEnterPortal={handleOpenWingPicker}
@@ -595,6 +787,7 @@ export default function App() {
                 selectedArtwork={selectedArtwork}
                 isSeated={isSeated}
                 artworks={displayedArtworks}
+                resetSignal={resetSignal}
               />
             )}
 
@@ -620,24 +813,23 @@ export default function App() {
         </Canvas>
       </ErrorBoundary>
 
-      {/* Room-change fade overlay — opacity driven per-frame by WalkControls.
-          The label sits inside so it only shows while the screen is dark. */}
+      {/* Underlying room-change dark backdrop — opacity driven per-frame by WalkControls */}
       <div
         ref={fadeRef}
         className="pointer-events-none absolute inset-0 z-30 flex items-center justify-center bg-black"
         style={{ opacity: 0 }}
-      >
-        {roomTransition && (
-          <div className="flex flex-col items-center gap-2 animate-pulse">
-            <div className="text-[10px] uppercase tracking-[0.4em] text-[#D4AF37]/70 font-sans">
-              Entering
-            </div>
-            <div className="text-sm uppercase tracking-[0.25em] text-[#D4AF37] font-sans text-center px-6">
-              {roomTransition.title || 'Gallery Wing'}
-            </div>
-          </div>
-        )}
-      </div>
+      />
+
+      {/* High-end Wing Transition Luxury Loading Screen */}
+      <RoomTransitionLoader
+        active={Boolean(roomTransition)}
+        fading={Boolean(roomTransition?.fading)}
+        roomTitle={roomTransition?.title}
+        artistName={roomTransition?.artist}
+        progress={roomTransition?.progress ?? 0}
+        status={roomTransition?.status}
+        itemDetail={roomTransition?.itemDetail}
+      />
 
       {/* Floating Glassmorphic HUD overlay */}
       <HUD

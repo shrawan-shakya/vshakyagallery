@@ -7,6 +7,7 @@ import AimTargets from './AimTargets';
 import { ROOM_H, ART_HANG_CENTER } from '../../constants';
 import { buildMiteredLoopGeometry } from '../../utils/moulding';
 import { QUALITY_TIERS } from '../../utils/quality';
+import { getCachedTexture, setCachedTexture } from '../../utils/texturePreloader';
 
 // Rectangular moulding ring with a centered opening (extruded along +Z)
 function makeRingGeometry(outerW, outerH, border, depth) {
@@ -211,9 +212,18 @@ function ArtworkFrame({ artwork, interactive = true, onSelect, onHoverChange, qu
   useEffect(() => () => railGeo.dispose(), [railGeo]);
 
   const [hovered, setHovered] = useState(false);
+  const { gl } = useThree();
+  const maxAniso = useMemo(() => gl?.capabilities?.getMaxAnisotropy?.() ?? 8, [gl]);
+  const anisotropy = Math.min(maxAniso, quality.anisotropy);
+  const maxTextureSide = quality.maxTextureSide;
+
+  // Priority: localDataUrl (curator upload cache) > (low tiers: imageUrlSm) > imageUrl
+  const effectiveUrl = artwork?.localDataUrl || (maxTextureSide <= 1024 && imageUrlSm ? imageUrlSm : imageUrl);
+
   // { url, texture } once loaded, { url, failed: true } on error. Keyed by
   // url so a stale result never shows while a new image is in flight.
-  const [loaded, setLoaded] = useState(null);
+  const cachedInitial = useMemo(() => getCachedTexture(effectiveUrl), [effectiveUrl]);
+  const [loaded, setLoaded] = useState(() => (cachedInitial ? { url: effectiveUrl, texture: cachedInitial } : null));
 
   // True when the nearest thing under the pointer belongs to THIS frame.
   // R3F delivers click events even when scenery (a wall) was hit first, so
@@ -238,19 +248,17 @@ function ArtworkFrame({ artwork, interactive = true, onSelect, onHoverChange, qu
     onHoverChange?.(v);
   }, [onHoverChange]);
 
-  const { gl } = useThree();
-  const maxAniso = useMemo(() => gl?.capabilities?.getMaxAnisotropy?.() ?? 8, [gl]);
-  const anisotropy = Math.min(maxAniso, quality.anisotropy);
-  const maxTextureSide = quality.maxTextureSide;
-
-  // Priority: localDataUrl (curator upload cache) > (low tiers: imageUrlSm) > imageUrl
-  const effectiveUrl = artwork?.localDataUrl || (maxTextureSide <= 1024 && imageUrlSm ? imageUrlSm : imageUrl);
-
   // Asynchronously fetch the image outside Suspense so a failure can't throw.
   // Oversized images are downscaled to the tier's texture cap before hitting the GPU.
   useEffect(() => {
     let active = true;
     let texture = null;
+
+    const existing = getCachedTexture(effectiveUrl);
+    if (existing) {
+      setLoaded({ url: effectiveUrl, texture: existing });
+      return;
+    }
 
     const applyTexture = (tex) => {
       tex.colorSpace = THREE.SRGBColorSpace;
@@ -259,6 +267,7 @@ function ArtworkFrame({ artwork, interactive = true, onSelect, onHoverChange, qu
       tex.magFilter = THREE.LinearFilter;
       tex.anisotropy = anisotropy;
       texture = tex;
+      setCachedTexture(effectiveUrl, tex);
       setLoaded({ url: effectiveUrl, texture: tex });
     };
 
@@ -308,10 +317,12 @@ function ArtworkFrame({ artwork, interactive = true, onSelect, onHoverChange, qu
 
     tryLoad(effectiveUrl);
 
-    // Free the GPU copy when the image changes or the frame leaves the room
+    // Free the GPU copy when the image changes or the frame leaves the room (unless retained in cache)
     return () => {
       active = false;
-      texture?.dispose();
+      if (texture && getCachedTexture(effectiveUrl) !== texture) {
+        texture.dispose();
+      }
     };
   }, [effectiveUrl, imageUrl, imageUrlSm, title, anisotropy, maxTextureSide]);
 
