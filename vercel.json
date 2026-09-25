@@ -14,7 +14,7 @@
       "destination": "/api/index.js"
     },
     {
-      "source": "/((?!api|uploads|assets|artworks|textures|hdri|favicon.svg|icons.svg).*)",
+      "source": "/((?!api|uploads|assets|audio|artworks|textures|hdri|favicon.svg|icons.svg).*)",
       "destination": "/index.html"
     }
   ]

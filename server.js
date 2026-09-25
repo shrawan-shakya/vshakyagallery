@@ -116,6 +116,17 @@ if (fs.existsSync(bundledUploadsDir)) {
 }
 app.use('/uploads', express.static(uploadsDir, staticUploadOptions));
 
+const bundledAudioDir = path.join(__dirname, 'public', 'audio');
+if (fs.existsSync(bundledAudioDir)) {
+  app.use('/audio', express.static(bundledAudioDir, {
+    setHeaders: (res) => {
+      res.set('Access-Control-Allow-Origin', '*');
+      res.set('Accept-Ranges', 'bytes');
+      res.set('Cache-Control', 'public, max-age=31536000, immutable');
+    },
+  }));
+}
+
 // Image proxy to bypass third-party CDN CORS restrictions in Three.js WebGL
 app.get('/api/image-proxy', async (req, res) => {
   try {
