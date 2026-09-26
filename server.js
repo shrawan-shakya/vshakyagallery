@@ -201,6 +201,7 @@ db.pragma('busy_timeout = 5000');
 function toArtworkDTO(row) {
   return {
     id: row.id,
+    sanityId: row.id,
     roomId: row.room_id,
     artistId: row.artist_id,
     title: row.title,
@@ -218,6 +219,9 @@ function toArtworkDTO(row) {
     wallId: row.wall_id,
     position: [row.pos_x, row.pos_y, row.pos_z],
     rotation: [0, row.rot_y, 0],
+    isHung: true,
+    unhung: false,
+    showIn3D: true,
   };
 }
 

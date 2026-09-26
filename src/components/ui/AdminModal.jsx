@@ -26,7 +26,7 @@ import {
 } from 'lucide-react';
 import { getHallOptions, getWallConfigs, getSlotPlan } from '../../utils/hallLayouts';
 import { ART_HANG_CENTER } from '../../constants';
-import { saveLocalArtworkOverride, removeLocalArtworkOverride, markLocalArtworkUnhung, clearLocalArtworkOverrides } from '../../data/artworks';
+import { saveLocalArtworkOverride, removeLocalArtworkOverride, markLocalArtworkUnhung, clearLocalArtworkOverrides, getLocalArtworkOverrides } from '../../data/artworks';
 import WallPositionRail from './WallPositionRail';
 
 const HEIGHT_PRESETS = [
@@ -180,17 +180,52 @@ export default function AdminModal({
     }
   }, [isOpen, loadCatalogue]);
 
-  const hungArtworks = artworks;
-  const hungIds = useMemo(() => new Set(
-    hungArtworks.map((a) => a.id).concat(hungArtworks.map((a) => a.sanityId).filter(Boolean))
-  ), [hungArtworks]);
+  const allArtworksWithOverrides = useMemo(() => {
+    const overrides = getLocalArtworkOverrides();
+    const seenIds = new Set();
+    const list = catalogueArtworks.map((art) => {
+      seenIds.add(art.id);
+      if (art.sanityId) seenIds.add(art.sanityId);
+      const override = overrides[art.id] || overrides[art.sanityId];
+      if (override) {
+        return {
+          ...art,
+          ...override,
+          isHung: override.isHung !== undefined ? override.isHung : (override.unhung === true ? false : art.isHung),
+          unhung: override.unhung !== undefined ? override.unhung : (override.isHung === true ? false : art.unhung),
+        };
+      }
+      return art;
+    });
+
+    Object.values(overrides).forEach((ov) => {
+      if (!seenIds.has(ov.id) && ov.title) {
+        seenIds.add(ov.id);
+        list.push(ov);
+      }
+    });
+
+    artworks.forEach((art) => {
+      if (!seenIds.has(art.id) && (!art.sanityId || !seenIds.has(art.sanityId))) {
+        seenIds.add(art.id);
+        list.push(art);
+      }
+    });
+
+    return list;
+  }, [catalogueArtworks, artworks]);
+
+  const hungArtworks = useMemo(() => {
+    return allArtworksWithOverrides.filter(
+      (a) => a.isHung !== false && a.unhung !== true && !!a.wallId
+    );
+  }, [allArtworksWithOverrides]);
 
   const vaultArtworks = useMemo(() => {
-    return catalogueArtworks.filter((a) => {
-      if (hungIds.has(a.id) || (a.sanityId && hungIds.has(a.sanityId))) return false;
-      return a.isHung === false || a.unhung === true || !a.wallId;
-    });
-  }, [catalogueArtworks, hungIds]);
+    return allArtworksWithOverrides.filter(
+      (a) => a.isHung === false || a.unhung === true || !a.wallId
+    );
+  }, [allArtworksWithOverrides]);
 
   // Authenticated fetch wrapper: attaches the admin token and drops the
   // session on any 401 so the login gate re-appears immediately
@@ -356,13 +391,15 @@ export default function AdminModal({
     }
   }, [targetWallDefs, selectedWallId]);
 
-  // Auto-select first available unoccupied slot — only when the wall changed
-  // or the current selection is invalid for this wall (never mid-editing)
+  // Auto-select first available unoccupied slot — when wall changed or slot invalid
   useEffect(() => {
-    if (editingArtwork) return;
+    // If we are editing an already-hung artwork on its own wall, keep its existing slot
+    const isAlreadyHungOnThisWall = editingArtwork?.position && editingArtwork?.isHung !== false && !editingArtwork?.unhung && editingArtwork?.wallId === selectedWallId;
+    if (isAlreadyHungOnThisWall) return;
+
     const wallChanged = lastAutoWallRef.current !== selectedWallId;
     const slotStillValid = wallSlotPresets.some(s => s.id === selectedSlot);
-    if (!wallChanged && slotStillValid) return;
+    if (!wallChanged && slotStillValid && !getOccupyingArtwork(customOffsetNum)) return;
     lastAutoWallRef.current = selectedWallId;
     const available = wallSlotPresets.find(s => !getOccupyingArtwork(s.offset));
     if (available) {
@@ -372,7 +409,7 @@ export default function AdminModal({
       setSelectedSlot(wallSlotPresets[0].id);
       setCustomOffsetNum(wallSlotPresets[0].offset);
     }
-  }, [selectedWallId, wallSlotPresets, editingArtwork, getOccupyingArtwork, selectedSlot]);
+  }, [selectedWallId, wallSlotPresets, editingArtwork, getOccupyingArtwork, selectedSlot, customOffsetNum]);
 
   const handleFileChange = (e) => {
     const selectedFile = e.target.files[0];
@@ -417,20 +454,26 @@ export default function AdminModal({
     const artHall = rooms.find((r) => r.id === artRoomId)?.hall_layout || 'classic';
     const defs = getWallConfigs(artHall);
 
-    // Validate that art.wallId is actually valid for this room's hall
-    let targetWall = art.wallId || 'back';
-    if (!defs[targetWall]) {
-      if (artHall === 'loop' && (targetWall === 'partition_front' || targetWall === 'partition_back')) {
-        targetWall = 'baffle_a_front';
-      } else if (artHall === 'classic' && targetWall.startsWith('baffle_')) {
-        targetWall = 'partition_front';
-      } else {
-        targetWall = Object.keys(defs)[0] || 'back';
-      }
+    const isUnhung = !art.position || art.isHung === false || art.unhung === true;
+    let targetWall = art.wallId;
+    if (!targetWall || !defs[targetWall]) {
+      // Find a wall with open slots
+      const candidateWalls = ['front', 'left', 'right', 'back', 'partition_front', 'partition_back'];
+      const openWall = candidateWalls.find((w) => {
+        if (!defs[w]) return false;
+        const presets = presetsForWall(w, artHall);
+        const wallOccupied = activeRoomArtworks.filter(a => a.wallId === w);
+        return presets.some(p => !wallOccupied.some(a => {
+          const isX = defs[w].axis === 'x';
+          const aOffset = isX ? (a.position?.[0] ?? 0) : (a.position?.[2] ?? 0);
+          return Math.abs(aOffset - p.offset) < 1.0;
+        }));
+      });
+      targetWall = openWall || Object.keys(defs)[0] || 'back';
     }
     setSelectedWallId(targetWall);
     
-    if (art.position) {
+    if (art.position && !isUnhung) {
       const h = art.position[1] || ART_HANG_CENTER;
       if (Math.abs(h - 1.4) < 0.1) setSelectedHeight('low');
       else if (Math.abs(h - 2.2) < 0.1) setSelectedHeight('high');
@@ -454,9 +497,16 @@ export default function AdminModal({
       setCustomHeightNum(h);
     } else {
       const wallPresets = presetsForWall(targetWall, artHall);
-      setSelectedSlot(wallPresets[0]?.id || null);
+      const wallOccupied = activeRoomArtworks.filter(a => a.wallId === targetWall);
+      const firstFree = wallPresets.find(p => !wallOccupied.some(a => {
+        const isX = defs[targetWall].axis === 'x';
+        const aOffset = isX ? (a.position?.[0] ?? 0) : (a.position?.[2] ?? 0);
+        return Math.abs(aOffset - p.offset) < 1.0;
+      })) || wallPresets[0];
+
+      setSelectedSlot(firstFree?.id || null);
       setSelectedHeight('eye');
-      setCustomOffsetNum(wallPresets[0]?.offset || 0);
+      setCustomOffsetNum(firstFree?.offset || 0);
       setCustomHeightNum(ART_HANG_CENTER);
     }
 
@@ -590,6 +640,9 @@ export default function AdminModal({
         rotation: [0, rotY, 0],
         imageUrl: preservedImageUrl,
         imageUrlSm: preservedImageUrlSm,
+        isHung: true,
+        unhung: false,
+        showIn3D: true,
       };
       saveLocalArtworkOverride(updatedObj);
 

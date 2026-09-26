@@ -602,12 +602,16 @@ export function saveLocalArtworkOverride(art) {
   if (typeof window === 'undefined' || !art || !art.id) return;
   try {
     const map = getLocalArtworkOverrides();
-    map[art.id] = {
+    const cleanArt = {
       ...art,
+      isHung: true,
+      unhung: false,
+      showIn3D: true,
       updatedAt: Date.now(),
     };
+    map[art.id] = cleanArt;
     if (art.sanityId) {
-      map[art.sanityId] = map[art.id];
+      map[art.sanityId] = cleanArt;
     }
     localStorage.setItem(OVERRIDES_STORAGE_KEY, JSON.stringify(map));
   } catch (e) {
@@ -630,7 +634,7 @@ export function markLocalArtworkUnhung(id) {
   if (typeof window === 'undefined' || !id) return;
   try {
     const map = getLocalArtworkOverrides();
-    map[id] = { id, unhung: true, updatedAt: Date.now() };
+    map[id] = { id, unhung: true, isHung: false, showIn3D: false, updatedAt: Date.now() };
     localStorage.setItem(OVERRIDES_STORAGE_KEY, JSON.stringify(map));
   } catch (e) {
     console.warn('Could not mark local artwork unhung:', e);
@@ -745,7 +749,10 @@ export async function fetchArtworksAPI(roomId = null, includeUnhung = false) {
   if (!includeUnhung) {
     merged = merged.filter((art) => {
       const override = overrides[art.id] || overrides[art.sanityId];
-      if (override?.unhung === true || override?.isHung === false) return false;
+      if (override) {
+        if (override.unhung === true || override.isHung === false || override.showIn3D === false) return false;
+        if (override.isHung === true && override.wallId) return true;
+      }
       if (art.unhung === true || art.showIn3D === false || art.isHung === false) return false;
       return true;
     });
