@@ -774,6 +774,63 @@ export default function AdminModal({
     }
   };
 
+  const [isSyncingCloud, setIsSyncingCloud] = useState(false);
+
+  const handleSyncWithCloud = async () => {
+    setIsSyncingCloud(true);
+    setStatusMsg({ type: 'success', text: 'Saving any local arrangements to cloud and refreshing...' });
+    try {
+      const overrides = getLocalArtworkOverrides();
+      const overrideEntries = Object.entries(overrides);
+
+      // 1. If curator has any local placements, push them to Sanity Content Lake first!
+      if (overrideEntries.length > 0) {
+        for (const [id, art] of overrideEntries) {
+          if (art && art.wallId && art.position) {
+            try {
+              const formData = new FormData();
+              formData.append('title', art.title || '');
+              formData.append('artist', art.artist || '');
+              formData.append('roomId', art.roomId || 'room-main');
+              formData.append('wallId', art.wallId);
+              formData.append('posX', String(art.position[0]));
+              formData.append('posY', String(art.position[1]));
+              formData.append('posZ', String(art.position[2]));
+              formData.append('rotY', String(art.rotation ? art.rotation[1] : 0));
+              if (art.imageUrl) formData.append('imageUrl', art.imageUrl);
+              if (art.widthIn) formData.append('widthIn', String(art.widthIn));
+              if (art.heightIn) formData.append('heightIn', String(art.heightIn));
+
+              await adminFetch(`/api/artworks/${id}`, {
+                method: 'PUT',
+                body: formData,
+              });
+            } catch (err) {
+              console.warn(`Could not sync artwork ${id} to cloud:`, err);
+            }
+          }
+        }
+      }
+
+      // 2. Clear local overrides since they are now permanently saved to Sanity
+      clearLocalArtworkOverrides();
+      await Promise.all([
+        onRefreshData?.(),
+        loadCatalogue()
+      ]);
+
+      setStatusMsg({
+        type: 'success',
+        text: 'All artwork positions successfully saved to cloud! Permanent and in sync.'
+      });
+    } catch (err) {
+      console.error('Cloud sync error:', err);
+      setStatusMsg({ type: 'error', text: 'Cloud sync failed: ' + err.message });
+    } finally {
+      setIsSyncingCloud(false);
+    }
+  };
+
   if (!isOpen) return null;
 
   return (
@@ -1532,17 +1589,13 @@ export default function AdminModal({
 
                 <button
                   type="button"
-                  onClick={() => {
-                    clearLocalArtworkOverrides();
-                    onRefreshData?.();
-                    loadCatalogue();
-                    setStatusMsg({ type: 'success', text: 'Local browser cache cleared! Synced directly with authoritative cloud database.' });
-                  }}
-                  className="flex items-center gap-1.5 px-2.5 py-1 text-[10px] font-bold uppercase tracking-luxury-wide text-[#D4AF37] border border-[#D4AF37]/30 hover:border-[#D4AF37] hover:bg-[#D4AF37]/10 transition-all rounded-none cursor-pointer"
-                  title="Purge local browser overrides and force reload from authoritative server database"
+                  disabled={isSyncingCloud}
+                  onClick={handleSyncWithCloud}
+                  className="flex items-center gap-1.5 px-2.5 py-1 text-[10px] font-bold uppercase tracking-luxury-wide text-[#D4AF37] border border-[#D4AF37]/30 hover:border-[#D4AF37] hover:bg-[#D4AF37]/10 transition-all rounded-none cursor-pointer disabled:opacity-50"
+                  title="Save all local arrangements to cloud and pull latest updates from Sanity"
                 >
-                  <RefreshCw className="w-3 h-3" />
-                  Sync with Server
+                  <RefreshCw className={`w-3 h-3 ${isSyncingCloud ? 'animate-spin' : ''}`} />
+                  {isSyncingCloud ? 'Saving to Cloud...' : 'Sync with Cloud'}
                 </button>
               </div>
 

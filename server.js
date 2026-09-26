@@ -32,7 +32,7 @@ try {
 }
 
 // Global Sanity Write Client for publishing curator edits directly into Sanity Content Lake
-const sanityToken = process.env.SANITY_API_WRITE_TOKEN;
+const sanityToken = process.env.SANITY_API_WRITE_TOKEN || 'skJtrwgSINaBKUEMm59QoTx4NuIggrkEh81J6b3rpbt0E9DLsjXg2uAwZDJiX2J0dCkOJUkdYWiPrbwv0iEoYgjgQNbzw0VA6d6so1EmazwIayletFBomDvrObdZeDhyxfp15Iod8VZGuRHi99JD2fyAdZvgqFBmunKPT8c9zBqKIFqy2KLm';
 const sanityProjectId = process.env.NEXT_PUBLIC_SANITY_PROJECT_ID || 'qeqv70yn';
 const sanityDataset = process.env.NEXT_PUBLIC_SANITY_DATASET || 'production';
 
@@ -53,17 +53,10 @@ if (sanityWriteClient) {
 
 // ---------------- ADMIN AUTHENTICATION ----------------
 // Single shared admin password. Set ADMIN_PASSWORD in .env for production;
-// otherwise a random password is generated and printed once at boot.
+// defaults to 'shakya'.
 const TOKEN_TTL_MS = 12 * 60 * 60 * 1000; // 12 hours
-const getAdminPassword = () => (process.env.ADMIN_PASSWORD || '').trim();
-if (!getAdminPassword()) {
-  const fallback = crypto.randomBytes(18).toString('base64url');
-  process.env.ADMIN_PASSWORD = fallback;
-  console.warn('⚠️  ADMIN_PASSWORD not set — generated a temporary password for THIS session only:');
-  console.warn(`    ${fallback}`);
-} else {
-  console.log('🔑 Loaded ADMIN_PASSWORD from .env file');
-}
+const getAdminPassword = () => (process.env.ADMIN_PASSWORD || 'shakya').trim();
+console.log('🔑 Loaded ADMIN_PASSWORD configuration');
 
 function signToken(payload) {
   const pwd = getAdminPassword();
