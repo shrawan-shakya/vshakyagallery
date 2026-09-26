@@ -83,6 +83,20 @@ export function parseDimensions(dimStr, imgDimensions) {
         widthIn = Math.round(rawW);
         heightIn = Math.round(rawH);
       }
+    } else {
+      // Also match formats like "48 x 24", "48 x 24 in", "60 x 80 cm", "48\" x 24\""
+      const genericMatch = s.match(/(\d+(?:\.\d+)?)\s*["']?\s*[xX*×]\s*(\d+(?:\.\d+)?)/);
+      if (genericMatch) {
+        const rawW = parseFloat(genericMatch[1]);
+        const rawH = parseFloat(genericMatch[2]);
+        if (isCm || (!isInch && (rawW > 25 || rawH > 25))) {
+          widthIn = Math.round(rawW / 2.54);
+          heightIn = Math.round(rawH / 2.54);
+        } else {
+          widthIn = Math.round(rawW);
+          heightIn = Math.round(rawH);
+        }
+      }
     }
   }
 
@@ -138,15 +152,16 @@ export function mapSanityArtworkTo3D(doc, slotIndex = 0, includeUnhung = false) 
     return null;
   }
 
-  // Check if curator specified an explicit dimension override in virtualGallery
-  let finalWidthIn = doc.virtualGallery?.widthIn;
-  let finalHeightIn = doc.virtualGallery?.heightIn;
+  // Physical dimensions: prioritize live dimensions from Sanity CMS
+  const imgMeta = doc.mainImage?.asset?.metadata?.dimensions;
+  const parsed = parseDimensions(doc.dimensions, imgMeta);
+  let finalWidthIn = parsed?.widthIn;
+  let finalHeightIn = parsed?.heightIn;
 
+  // Fallback to virtualGallery override or default if dimensions string not found
   if (!finalWidthIn || !finalHeightIn || isNaN(finalWidthIn) || isNaN(finalHeightIn)) {
-    const imgMeta = doc.mainImage?.asset?.metadata?.dimensions;
-    const parsed = parseDimensions(doc.dimensions, imgMeta);
-    finalWidthIn = parsed.widthIn;
-    finalHeightIn = parsed.heightIn;
+    finalWidthIn = doc.virtualGallery?.widthIn || 48;
+    finalHeightIn = doc.virtualGallery?.heightIn || 36;
   }
 
   // Determine wall placement: custom virtualGallery override if set, else assign next slot if hung

@@ -701,29 +701,24 @@ export async function fetchArtworksAPI(roomId = null, includeUnhung = false) {
     if (override) {
       overriddenIds.add(art.id);
       if (art.sanityId) overriddenIds.add(art.sanityId);
-      const wIn = override.widthIn !== undefined ? parseFloat(override.widthIn) : art.widthIn;
-      const hIn = override.heightIn !== undefined ? parseFloat(override.heightIn) : art.heightIn;
-      // Ensure the authentic artwork image is never clobbered by a generic database default
-      const finalImageUrl = (override.imageUrl && !override.imageUrl.includes('starry-horizon'))
-        ? override.imageUrl
-        : art.imageUrl;
-      const finalImageUrlSm = (override.imageUrlSm && !override.imageUrlSm.includes('starry-horizon'))
-        ? override.imageUrlSm
-        : art.imageUrlSm;
+      // Prioritize authentic metadata (title, artist, dimensions, description, story, price) directly from Sanity!
+      // Only overlay 3D wall placement, room assignment, and hanging state from local curator overrides
+      const effectiveWidthIn = art.widthIn || (override.widthIn !== undefined ? parseFloat(override.widthIn) : 48);
+      const effectiveHeightIn = art.heightIn || (override.heightIn !== undefined ? parseFloat(override.heightIn) : 36);
 
       return {
         ...art,
-        ...override,
-        imageUrl: finalImageUrl,
-        imageUrlSm: finalImageUrlSm,
         position: override.position || art.position,
         rotation: override.rotation || art.rotation,
         wallId: override.wallId || art.wallId,
-        widthIn: wIn,
-        heightIn: hIn,
-        width: wIn * IN,
-        height: hIn * IN,
         roomId: override.roomId || art.roomId,
+        widthIn: effectiveWidthIn,
+        heightIn: effectiveHeightIn,
+        width: effectiveWidthIn * IN,
+        height: effectiveHeightIn * IN,
+        isHung: override.isHung !== undefined ? override.isHung : art.isHung,
+        unhung: override.unhung !== undefined ? override.unhung : art.unhung,
+        showIn3D: override.showIn3D !== undefined ? override.showIn3D : art.showIn3D,
       };
     }
     return art;
