@@ -650,12 +650,12 @@ export function clearLocalArtworkOverrides() {
  * Fetch artworks from Sanity Content Lake, merged with instant curator overrides
  * and falling back to Express REST API / static catalogue.
  */
-export async function fetchArtworksAPI(roomId = null) {
+export async function fetchArtworksAPI(roomId = null, includeUnhung = false) {
   let list = [];
 
   // 1. Try querying Sanity Content Lake directly
   try {
-    const sanityArtworks = await fetchSanityArtworks();
+    const sanityArtworks = await fetchSanityArtworks(includeUnhung);
     if (Array.isArray(sanityArtworks) && sanityArtworks.length > 0) {
       list = sanityArtworks;
     }
@@ -666,9 +666,12 @@ export async function fetchArtworksAPI(roomId = null) {
   // 2. Fallback to Express REST API
   if (list.length === 0) {
     try {
-      const base = roomId ? `/api/artworks?roomId=${encodeURIComponent(roomId)}` : '/api/artworks';
-      const sep = base.includes('?') ? '&' : '?';
-      const url = `${base}${sep}_t=${Date.now()}`;
+      const params = new URLSearchParams();
+      if (roomId && !includeUnhung) params.set('roomId', roomId);
+      if (includeUnhung) params.set('includeUnhung', 'true');
+      params.set('_t', Date.now().toString());
+
+      const url = `/api/artworks?${params.toString()}`;
       const res = await fetch(url, { cache: 'no-store' });
       if (res.ok) {
         const data = await res.json();
@@ -738,16 +741,18 @@ export async function fetchArtworksAPI(roomId = null) {
     }
   });
 
-  // 5. Exclude unhung / vaulted artworks from 3D display
-  merged = merged.filter((art) => {
-    const override = overrides[art.id] || overrides[art.sanityId];
-    if (override?.unhung === true) return false;
-    if (art.unhung === true || art.showIn3D === false) return false;
-    return true;
-  });
+  // 5. Exclude unhung / vaulted artworks from 3D display unless includeUnhung is requested
+  if (!includeUnhung) {
+    merged = merged.filter((art) => {
+      const override = overrides[art.id] || overrides[art.sanityId];
+      if (override?.unhung === true || override?.isHung === false) return false;
+      if (art.unhung === true || art.showIn3D === false || art.isHung === false) return false;
+      return true;
+    });
+  }
 
-  // 6. Filter by requested exhibition room
-  if (roomId) {
+  // 6. Filter by requested exhibition room (unless includeUnhung is requested)
+  if (roomId && !includeUnhung) {
     return merged.filter((a) => !a.roomId || a.roomId === roomId);
   }
 

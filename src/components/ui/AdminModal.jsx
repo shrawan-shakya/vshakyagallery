@@ -20,7 +20,9 @@ import {
   ArrowDown,
   Lock,
   LogOut,
-  RefreshCw
+  RefreshCw,
+  Plus,
+  Package
 } from 'lucide-react';
 import { getHallOptions, getWallConfigs, getSlotPlan } from '../../utils/hallLayouts';
 import { ART_HANG_CENTER } from '../../constants';
@@ -47,6 +49,7 @@ const HALL_WALL_META = {
   right: { title: 'Right Wall', label: 'EAST' },
   partition_front: { title: 'Middle Wall (Front)', label: 'MIDDLE' },
   partition_back: { title: 'Middle Wall (Back)', label: 'MIDDLE' },
+  front: { title: 'Entrance Wall (South)', label: 'SOUTH' },
   baffle_a_front: { title: 'Baffle A (South Face)', label: 'CHAPEL I' },
   baffle_a_back: { title: 'Baffle A (North Face)', label: 'CHAPEL I' },
   baffle_b_front: { title: 'Baffle B (South Face)', label: 'CHAPEL II' },
@@ -148,6 +151,46 @@ export default function AdminModal({
 
   const [isUploading, setIsUploading] = useState(false);
   const [statusMsg, setStatusMsg] = useState(null);
+
+  // Full master catalogue (including unhung/vault items from shakyagallery.com)
+  const [catalogueArtworks, setCatalogueArtworks] = useState([]);
+  const [manageView, setManageView] = useState('hung'); // 'hung' | 'vault'
+  const [isLoadingCatalogue, setIsLoadingCatalogue] = useState(false);
+
+  const loadCatalogue = useCallback(async () => {
+    setIsLoadingCatalogue(true);
+    try {
+      const res = await fetch(`/api/artworks?includeUnhung=true&_t=${Date.now()}`);
+      if (res.ok) {
+        const data = await res.json();
+        if (Array.isArray(data)) {
+          setCatalogueArtworks(data);
+        }
+      }
+    } catch (err) {
+      console.warn('Could not load full catalogue in admin:', err);
+    } finally {
+      setIsLoadingCatalogue(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (isOpen) {
+      loadCatalogue();
+    }
+  }, [isOpen, loadCatalogue]);
+
+  const hungArtworks = artworks;
+  const hungIds = useMemo(() => new Set(
+    hungArtworks.map((a) => a.id).concat(hungArtworks.map((a) => a.sanityId).filter(Boolean))
+  ), [hungArtworks]);
+
+  const vaultArtworks = useMemo(() => {
+    return catalogueArtworks.filter((a) => {
+      if (hungIds.has(a.id) || (a.sanityId && hungIds.has(a.sanityId))) return false;
+      return a.isHung === false || a.unhung === true || !a.wallId;
+    });
+  }, [catalogueArtworks, hungIds]);
 
   // Authenticated fetch wrapper: attaches the admin token and drops the
   // session on any 401 so the login gate re-appears immediately
@@ -558,7 +601,9 @@ export default function AdminModal({
       handleCancelEdit();
       setStatusMsg({ type: 'success', text: successMsg });
       setActiveTab('manage');
+      setManageView('hung');
       onRefreshData?.();
+      loadCatalogue();
     } catch (err) {
       console.error("Save artwork error:", err);
       setStatusMsg({ type: 'error', text: err.message || 'Failed to save artwork.' });
@@ -670,6 +715,7 @@ export default function AdminModal({
       setStatusMsg({ type: 'success', text: `Unhung "${artTitle}" from 3D exhibition. Master record safely preserved in Sanity.` });
       if (editingArtwork?.id === id) handleCancelEdit();
       onRefreshData?.();
+      loadCatalogue();
     } catch (err) {
       setStatusMsg({ type: 'error', text: err.message });
     }
@@ -760,8 +806,24 @@ export default function AdminModal({
                 : 'border-transparent text-slate-400 hover:text-slate-200'
             }`}
           >
-            {editingArtwork ? <Pencil className="w-4 h-4" /> : <Upload className="w-4 h-4" />}
-            {editingArtwork ? 'Edit Artwork' : 'Upload Artwork'}
+            {editingArtwork ? (
+              (editingArtwork.isHung === false || editingArtwork.unhung || !editingArtwork.wallId) ? (
+                <>
+                  <Sparkles className="w-4 h-4 text-[#D4AF37]" />
+                  Hang from Vault
+                </>
+              ) : (
+                <>
+                  <Pencil className="w-4 h-4" />
+                  Edit Placement
+                </>
+              )
+            ) : (
+              <>
+                <Upload className="w-4 h-4" />
+                Upload Artwork
+              </>
+            )}
           </button>
           <button
             onClick={() => setActiveTab('rooms')}
@@ -784,6 +846,11 @@ export default function AdminModal({
           >
             <ImageIcon className="w-4 h-4" />
             Manage Exhibition ({artworks.length})
+            {vaultArtworks.length > 0 && (
+              <span className="ml-1 text-[9px] px-1.5 py-0.5 rounded-full bg-[#D4AF37]/20 text-[#D4AF37] border border-[#D4AF37]/40 font-mono font-normal">
+                {vaultArtworks.length} in vault
+              </span>
+            )}
           </button>
         </div>
 
@@ -804,20 +871,29 @@ export default function AdminModal({
           {activeTab === 'upload' && (
             <form onSubmit={handleSaveArtwork} className="space-y-5">
               
-              {/* Editing Banner */}
+              {/* Editing / Placing Banner */}
               {editingArtwork && (
                 <div className="flex items-center justify-between p-3 rounded-none bg-[#D4AF37]/10 border border-[#D4AF37]/40 text-[#D4AF37] text-xs font-mono">
                   <div className="flex items-center gap-2">
-                    <Pencil className="w-4 h-4" />
-                    <span>Editing Artwork: <strong>"{editingArtwork.title}"</strong></span>
+                    {editingArtwork.isHung === false || editingArtwork.unhung || !editingArtwork.wallId ? (
+                      <Sparkles className="w-4 h-4 text-[#D4AF37]" />
+                    ) : (
+                      <Pencil className="w-4 h-4" />
+                    )}
+                    <span>
+                      {editingArtwork.isHung === false || editingArtwork.unhung || !editingArtwork.wallId
+                        ? 'Placing from Vault: '
+                        : 'Editing Placement: '}
+                      <strong>"{editingArtwork.title}"</strong>
+                    </span>
                   </div>
                   <button
                     type="button"
                     onClick={handleCancelEdit}
-                    className="flex items-center gap-1 text-[10px] uppercase font-bold text-slate-300 hover:text-slate-100 bg-white/10 px-2 py-1 rounded-none"
+                    className="flex items-center gap-1 text-[10px] uppercase font-bold text-slate-300 hover:text-slate-100 bg-white/10 px-2 py-1 rounded-none cursor-pointer"
                   >
                     <RotateCcw className="w-3 h-3" />
-                    Cancel Edit
+                    Cancel
                   </button>
                 </div>
               )}
@@ -1123,11 +1199,15 @@ export default function AdminModal({
               <button
                 type="submit"
                 disabled={isUploading}
-                className="w-full py-3.5 bg-[#D4AF37] hover:bg-[#b8952b] text-[#111111] font-bold text-xs uppercase tracking-luxury-extreme rounded-none transition-all shadow-md active:scale-95 disabled:opacity-50"
+                className="w-full py-3.5 bg-[#D4AF37] hover:bg-[#b8952b] text-[#111111] font-bold text-xs uppercase tracking-luxury-extreme rounded-none transition-all shadow-md active:scale-95 disabled:opacity-50 cursor-pointer"
               >
                 {isUploading 
-                  ? (editingArtwork ? 'Updating Artwork...' : 'Hanging Artwork in 3D...') 
-                  : (editingArtwork ? 'Update Artwork Details' : 'Hang Artwork in 3D Gallery')}
+                  ? (editingArtwork ? 'Saving Placement...' : 'Hanging Artwork in 3D...') 
+                  : (editingArtwork 
+                      ? (editingArtwork.isHung === false || editingArtwork.unhung || !editingArtwork.wallId
+                          ? 'Hang Artwork in 3D Gallery'
+                          : 'Update Artwork Placement')
+                      : 'Hang Artwork in 3D Gallery')}
               </button>
             </form>
           )}
@@ -1356,17 +1436,54 @@ export default function AdminModal({
 
           {/* TAB 3: MANAGE EXHIBITION */}
           {activeTab === 'manage' && (
-            <div className="space-y-3">
-              <div className="flex items-center justify-between pb-2 border-b border-white/10">
-                <span className="text-[10px] font-mono text-slate-400">
-                  {artworks.length} Masterpiece{artworks.length !== 1 ? 's' : ''} in Catalogue
-                </span>
+            <div className="space-y-4">
+              {/* Manage Sub-Navigation: Hung vs Vault */}
+              <div className="flex items-center justify-between gap-2 pb-3 border-b border-white/10 flex-wrap">
+                <div className="flex items-center gap-1.5 bg-[#181818] p-1 border border-white/10">
+                  <button
+                    type="button"
+                    onClick={() => setManageView('hung')}
+                    className={`px-3 py-1.5 text-xs font-bold uppercase tracking-luxury-wide transition-all rounded-none cursor-pointer flex items-center gap-1.5 ${
+                      manageView === 'hung'
+                        ? 'bg-[#D4AF37] text-[#111111] shadow-sm'
+                        : 'text-slate-400 hover:text-slate-200'
+                    }`}
+                  >
+                    <span>Hung on Walls</span>
+                    <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-mono ${
+                      manageView === 'hung' ? 'bg-[#111111]/20 text-[#111111]' : 'bg-white/10 text-slate-300'
+                    }`}>
+                      {hungArtworks.length}
+                    </span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setManageView('vault')}
+                    className={`px-3 py-1.5 text-xs font-bold uppercase tracking-luxury-wide transition-all rounded-none cursor-pointer flex items-center gap-1.5 ${
+                      manageView === 'vault'
+                        ? 'bg-[#D4AF37] text-[#111111] shadow-sm'
+                        : 'text-slate-400 hover:text-slate-200'
+                    }`}
+                  >
+                    <Package className="w-3.5 h-3.5" />
+                    <span>Vault / Unhung</span>
+                    {vaultArtworks.length > 0 && (
+                      <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-mono ${
+                        manageView === 'vault' ? 'bg-[#111111]/20 text-[#111111]' : 'bg-[#D4AF37]/20 text-[#D4AF37]'
+                      }`}>
+                        {vaultArtworks.length}
+                      </span>
+                    )}
+                  </button>
+                </div>
+
                 <button
                   type="button"
                   onClick={() => {
                     clearLocalArtworkOverrides();
                     onRefreshData?.();
-                    setStatusMsg({ type: 'success', text: 'Local browser cache cleared! Synced directly with server.' });
+                    loadCatalogue();
+                    setStatusMsg({ type: 'success', text: 'Local browser cache cleared! Synced directly with authoritative cloud database.' });
                   }}
                   className="flex items-center gap-1.5 px-2.5 py-1 text-[10px] font-bold uppercase tracking-luxury-wide text-[#D4AF37] border border-[#D4AF37]/30 hover:border-[#D4AF37] hover:bg-[#D4AF37]/10 transition-all rounded-none cursor-pointer"
                   title="Purge local browser overrides and force reload from authoritative server database"
@@ -1375,39 +1492,125 @@ export default function AdminModal({
                   Sync with Server
                 </button>
               </div>
-              {artworks.length === 0 ? (
-                <p className="text-xs text-slate-400 text-center py-8">No artworks in current exhibition catalogue.</p>
-              ) : (
-                artworks.map((art) => (
-                  <div key={art.id} className="flex items-center justify-between p-3 bg-[#181818] border border-white/10">
-                    <div className="flex items-center gap-3">
-                      <img src={art.localDataUrl || art.imageUrlSm || art.imageUrl} crossOrigin="anonymous" alt={art.title} className="w-12 h-12 object-cover rounded-none border border-white/10" />
-                      <div>
-                        <h4 className="text-xs font-bold text-[#FAFAFA]">{art.title}</h4>
-                        <p className="text-[10px] text-slate-400">{art.artist} • {art.widthIn}″ × {art.heightIn}″ • Wall: {art.wallId}</p>
-                      </div>
+
+              {/* VIEW 1: HUNG ARTWORKS */}
+              {manageView === 'hung' && (
+                <div className="space-y-3">
+                  {hungArtworks.length === 0 ? (
+                    <div className="text-center py-10 border border-white/5 bg-[#181818]/50">
+                      <p className="text-xs text-slate-400">No artworks currently hung in this gallery exhibition.</p>
+                      <p className="text-[10px] text-slate-500 mt-1">Switch to the Vault tab above to hang paintings from your collection.</p>
                     </div>
-                    <div className="flex items-center gap-1">
-                      <button
-                        onClick={() => handleStartEditArtwork(art)}
-                        className="p-2 rounded-none text-slate-400 hover:text-[#D4AF37] hover:bg-[#D4AF37]/10 transition-all"
-                        title="Edit artwork position & details"
-                      >
-                        <Pencil className="w-4 h-4" />
-                      </button>
-                      <button
-                        onClick={() => handleDeleteArtwork(art.id, art.title)}
-                        className="p-2 rounded-none text-slate-400 hover:text-red-400 hover:bg-red-500/10 transition-all"
-                        title="Unhang artwork from 3D exhibition (safely preserves in Sanity)"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
+                  ) : (
+                    hungArtworks.map((art) => (
+                      <div key={art.id} className="flex items-center justify-between p-3 bg-[#181818] border border-white/10 hover:border-white/20 transition-all">
+                        <div className="flex items-center gap-3 min-w-0">
+                          <img
+                            src={art.localDataUrl || art.imageUrlSm || art.imageUrl}
+                            crossOrigin="anonymous"
+                            alt={art.title}
+                            className="w-12 h-12 object-cover rounded-none border border-white/10 shrink-0"
+                          />
+                          <div className="min-w-0">
+                            <h4 className="text-xs font-bold text-[#FAFAFA] truncate">{art.title}</h4>
+                            <p className="text-[10px] text-slate-400 truncate">
+                              {art.artist} • {art.widthIn}″ × {art.heightIn}″
+                            </p>
+                            <p className="text-[10px] font-mono text-[#D4AF37]/80 truncate">
+                              Wall: {art.wallId || 'back'} {art.position ? `(${art.position[0]?.toFixed(1)}m, ${art.position[1]?.toFixed(1)}m)` : ''}
+                            </p>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-1 shrink-0 ml-3">
+                          <button
+                            type="button"
+                            onClick={() => handleStartEditArtwork(art)}
+                            className="p-2 rounded-none text-slate-400 hover:text-[#D4AF37] hover:bg-[#D4AF37]/10 transition-all cursor-pointer"
+                            title="Edit artwork position & details"
+                          >
+                            <Pencil className="w-4 h-4" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteArtwork(art.id, art.title)}
+                            className="p-2 rounded-none text-slate-400 hover:text-red-400 hover:bg-red-500/10 transition-all cursor-pointer"
+                            title="Unhang artwork from 3D exhibition (moves to Vault, safely preserved in Sanity)"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </div>
+              )}
+
+              {/* VIEW 2: VAULT / UNHUNG ARTWORKS */}
+              {manageView === 'vault' && (
+                <div className="space-y-3">
+                  <div className="p-3 bg-[#181818] border border-[#D4AF37]/30 text-xs text-slate-300 flex items-start gap-2.5">
+                    <Sparkles className="w-4 h-4 text-[#D4AF37] shrink-0 mt-0.5" />
+                    <div>
+                      <p className="font-bold text-[#FAFAFA]">Curator Vault ({vaultArtworks.length} Unhung Artwork{vaultArtworks.length !== 1 ? 's' : ''})</p>
+                      <p className="text-[11px] text-slate-400 mt-0.5">
+                        These artworks are synced from shakyagallery.com or unhung from the walls. They are safely kept in your vault and are NOT visible to visitors in 3D. Click <strong>Hang on Wall</strong> to review and place them on any wall in the gallery.
+                      </p>
                     </div>
                   </div>
-                ))
+
+                  {isLoadingCatalogue ? (
+                    <div className="text-center py-10 border border-white/5 bg-[#181818]/50">
+                      <p className="text-xs text-slate-400">Loading collection from Sanity…</p>
+                    </div>
+                  ) : vaultArtworks.length === 0 ? (
+                    <div className="text-center py-10 border border-white/5 bg-[#181818]/50">
+                      <Package className="w-8 h-8 text-slate-600 mx-auto mb-2" />
+                      <p className="text-xs text-slate-400">Vault is empty — all catalogue items are currently hung on walls.</p>
+                      <p className="text-[10px] text-slate-500 mt-1">When you add new paintings to shakyagallery.com, they will appear here automatically ready to be placed.</p>
+                    </div>
+                  ) : (
+                    vaultArtworks.map((art) => (
+                      <div key={art.id} className="flex items-center justify-between p-3 bg-[#181818] border border-[#D4AF37]/30 hover:border-[#D4AF37]/60 transition-all">
+                        <div className="flex items-center gap-3 min-w-0">
+                          <img
+                            src={art.imageUrlSm || art.imageUrl || '/artworks/starry-horizon.jpg'}
+                            crossOrigin="anonymous"
+                            alt={art.title}
+                            className="w-14 h-14 object-cover rounded-none border border-white/10 shrink-0"
+                          />
+                          <div className="min-w-0">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <h4 className="text-xs font-bold text-[#FAFAFA] truncate">{art.title}</h4>
+                              <span className="px-1.5 py-0.2 text-[9px] font-mono uppercase tracking-luxury-wide bg-[#D4AF37]/15 text-[#D4AF37] border border-[#D4AF37]/30 shrink-0">
+                                In Vault
+                              </span>
+                            </div>
+                            <p className="text-[10px] text-slate-400 truncate mt-0.5">
+                              {art.artist || 'Featured Master'} {art.medium ? `• ${art.medium}` : ''} {art.year ? `• ${art.year}` : ''}
+                            </p>
+                            <p className="text-[10px] font-mono text-slate-500 mt-0.5">
+                              {art.widthIn || 48}″ × {art.heightIn || 36}″ {art.sku ? `• SKU: ${art.sku}` : ''}
+                            </p>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-2 shrink-0 ml-3">
+                          <button
+                            type="button"
+                            onClick={() => handleStartEditArtwork(art)}
+                            className="flex items-center gap-1.5 px-3 py-2 bg-[#D4AF37] hover:bg-[#b8952b] text-[#111111] font-bold text-xs uppercase tracking-luxury-wide rounded-none transition-all shadow-sm cursor-pointer"
+                            title="Choose room, wall and slot to hang this artwork"
+                          >
+                            <Plus className="w-3.5 h-3.5" />
+                            <span>Hang on Wall</span>
+                          </button>
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </div>
               )}
-             </div>
-           )}
+            </div>
+          )}
 
         </div>
         </>

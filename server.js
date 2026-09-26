@@ -19,6 +19,7 @@ import {
   getSlotPlan,
 } from './src/utils/hallLayouts.js';
 import { fetchSanityArtworks } from './src/utils/sanityArtworks.js';
+import { sanityClient } from './src/lib/sanity.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -556,9 +557,19 @@ app.post('/api/auth/login', loginLimiter, (req, res) => {
 });
 
 // GET /api/artists - Get list of all artists
-app.get('/api/artists', (req, res) => {
+app.get('/api/artists', async (req, res) => {
   try {
     res.set('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+    try {
+      const artists = await sanityClient.fetch(
+        `*[_type == "artist"] | order(name asc) { "id": _id, name, bio, "slug": slug.current }`
+      );
+      if (Array.isArray(artists) && artists.length > 0) {
+        return res.json(artists);
+      }
+    } catch (sanityErr) {
+      console.warn('Could not fetch artists from Sanity, falling back to SQLite:', sanityErr.message);
+    }
     const artists = db.prepare('SELECT * FROM artists ORDER BY name ASC').all();
     res.json(artists);
   } catch (err) {
@@ -594,7 +605,7 @@ app.post('/api/artists', writeLimiter, requireAdmin, (req, res) => {
 });
 
 // GET /api/rooms - Get all rooms with artist details
-app.get('/api/rooms', (req, res) => {
+app.get('/api/rooms', async (req, res) => {
   try {
     res.set('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
     const rooms = db.prepare(`
@@ -603,7 +614,40 @@ app.get('/api/rooms', (req, res) => {
       JOIN artists ON rooms.artist_id = artists.id
       ORDER BY rooms.title ASC
     `).all();
-    res.json(rooms);
+
+    const roomMap = new Map();
+    rooms.forEach((r) => roomMap.set(r.id, r));
+
+    if (!roomMap.has('room-main')) {
+      roomMap.set('room-main', {
+        id: 'room-main',
+        title: 'Main Permanent Exhibition',
+        artist_name: 'Shakya Gallery Masters',
+        hall_layout: 'classic',
+      });
+    }
+
+    // Dynamic Sanity gallery wing discovery on server
+    try {
+      const sanityArtworks = await fetchSanityArtworks();
+      if (Array.isArray(sanityArtworks)) {
+        sanityArtworks.forEach((art) => {
+          if (art.roomId && !roomMap.has(art.roomId)) {
+            const isWing2 = art.roomId === 'room-wing-2';
+            roomMap.set(art.roomId, {
+              id: art.roomId,
+              title: isWing2 ? 'Pavilion Wing II' : `Gallery Wing (${art.roomId})`,
+              artist_name: 'Shakya Gallery Masters',
+              hall_layout: 'classic',
+            });
+          }
+        });
+      }
+    } catch {
+      // fallback
+    }
+
+    res.json(Array.from(roomMap.values()));
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -734,17 +778,21 @@ app.delete('/api/rooms/:id', writeLimiter, requireAdmin, (req, res) => {
   }
 });
 
-// GET /api/artworks - Get artworks (optional ?roomId= filter)
+// GET /api/artworks - Get artworks (optional ?roomId= and ?includeUnhung= filter)
 app.get('/api/artworks', async (req, res) => {
   try {
     res.set('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
-    const { roomId } = req.query;
+    const { roomId, includeUnhung } = req.query;
+    const wantAll = includeUnhung === 'true';
 
     // 1. Prioritize live Sanity Content Lake
     try {
-      const sanityArtworks = await fetchSanityArtworks();
+      const sanityArtworks = await fetchSanityArtworks(wantAll);
       if (Array.isArray(sanityArtworks) && sanityArtworks.length > 0) {
-        const filtered = roomId ? sanityArtworks.filter((a) => !a.roomId || a.roomId === roomId) : sanityArtworks;
+        let filtered = sanityArtworks;
+        if (!wantAll && roomId) {
+          filtered = filtered.filter((a) => !a.roomId || a.roomId === roomId);
+        }
         return res.json(filtered);
       }
     } catch (sanityErr) {
@@ -754,7 +802,7 @@ app.get('/api/artworks', async (req, res) => {
     // 2. Fallback to local SQLite database
     let query = 'SELECT * FROM artworks';
     let params = [];
-    if (roomId) {
+    if (!wantAll && roomId) {
       query += ' WHERE room_id = ?';
       params.push(roomId);
     }
@@ -962,6 +1010,7 @@ app.put('/api/artworks/:id', writeLimiter, requireAdmin, handleUpload('image'), 
           'virtualGallery.roomId': newRoomId,
           'virtualGallery.showIn3D': true,
           'virtualGallery.unhung': false,
+          'virtualGallery.isHung': true,
           'virtualGallery.widthIn': finalWidthIn,
           'virtualGallery.heightIn': finalHeightIn,
         };
@@ -1003,6 +1052,7 @@ app.delete('/api/artworks/:id', writeLimiter, requireAdmin, async (req, res) => 
           .set({
             'virtualGallery.showIn3D': false,
             'virtualGallery.unhung': true,
+            'virtualGallery.isHung': false,
           })
           .commit({ autoGenerateArrayKeys: true });
         console.log(`✅ Unhung artwork "${id}" in Sanity Content Lake (preserved catalog record)`);

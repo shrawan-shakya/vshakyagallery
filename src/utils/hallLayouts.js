@@ -47,6 +47,14 @@ const PERIMETER_WALLS = {
     spanMax: 7.5,
     axis: 'z',
   },
+  front: {
+    name: 'Entrance Wall (South)',
+    center: [0, ART_HANG_CENTER, 9.8],
+    rotation: [0, Math.PI, 0],
+    spanMin: -7.5,
+    spanMax: 7.5,
+    axis: 'x',
+  },
 };
 
 export const HALL_LAYOUTS = {
@@ -71,11 +79,12 @@ export const HALL_LAYOUTS = {
       { minX: -4, maxX: 4, minZ: 1.85, maxZ: 2.15 },
     ],
     slotPlan: {
-      back: [-6.75, -4.5, -2.25, 0, 2.25, 4.5, 6.75],
-      left: [-6.75, -4.5, -2.25, 0, 2.25, 4.5, 6.75],
-      right: [-6.75, -4.5, -2.25, 0, 2.25, 4.5, 6.75],
+      back: [-8.2, -6.75, -4.5, -2.25, 0, 2.25, 4.5, 6.75, 8.2],
+      left: [-8.2, -6.75, -4.5, -2.25, 0, 2.25, 4.5, 6.75],
+      right: [-8.2, -6.75, -4.5, -2.25, 0, 2.25, 4.5, 6.75],
       partition_front: [-2.2, 0, 2.2],
       partition_back: [-2.2, 0, 2.2],
+      front: [-5.5, -3.2, 3.2, 5.5],
     },
     walls: {
       ...PERIMETER_WALLS,
@@ -147,6 +156,7 @@ export const HALL_LAYOUTS = {
       baffle_a_back: [-8.6, -7.4, -6.2],
       baffle_b_front: [6.2, 7.4, 8.6],
       baffle_b_back: [6.2, 7.4, 8.6],
+      front: [-5.5, -3.2, 3.2, 5.5],
     },
     walls: {
       ...PERIMETER_WALLS,

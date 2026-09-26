@@ -1,7 +1,7 @@
 import { sanityClient, urlFor } from '../lib/sanity.js';
 import { IN, ART_HANG_CENTER, ARTWORK_SCALE } from '../constants.js';
 
-// Predefined balanced wall spots for Classic Center Hall architecture (27 total spots)
+// Predefined balanced wall spots for Classic Center Hall architecture (35 total spots)
 export const HALL_SLOTS = [
   // Center partition front (entrance focal points) - 3 spots
   { wallId: 'partition_front', position: [0, 1.8, 2.2], rotation: [0, 0, 0] },
@@ -39,6 +39,18 @@ export const HALL_SLOTS = [
   { wallId: 'right', position: [9.8, 1.8, 4.5], rotation: [0, -Math.PI / 2, 0] },
   { wallId: 'right', position: [9.8, 1.8, -6.75], rotation: [0, -Math.PI / 2, 0] },
   { wallId: 'right', position: [9.8, 1.8, 6.75], rotation: [0, -Math.PI / 2, 0] },
+
+  // Entrance wall (South entrance focal spots) - 4 spots
+  { wallId: 'front', position: [-5.5, 1.8, 9.8], rotation: [0, Math.PI, 0] },
+  { wallId: 'front', position: [5.5, 1.8, 9.8], rotation: [0, Math.PI, 0] },
+  { wallId: 'front', position: [-3.2, 1.8, 9.8], rotation: [0, Math.PI, 0] },
+  { wallId: 'front', position: [3.2, 1.8, 9.8], rotation: [0, Math.PI, 0] },
+
+  // Perimeter wall expansion flanks - 4 spots
+  { wallId: 'back', position: [-8.2, 1.8, -9.8], rotation: [0, 0, 0] },
+  { wallId: 'back', position: [8.2, 1.8, -9.8], rotation: [0, 0, 0] },
+  { wallId: 'left', position: [-9.8, 1.8, -8.2], rotation: [0, Math.PI / 2, 0] },
+  { wallId: 'right', position: [9.8, 1.8, -8.2], rotation: [0, -Math.PI / 2, 0] },
 ];
 
 /**
@@ -115,9 +127,14 @@ export function toProxyUrl(url) {
 /**
  * Transforms a Sanity artwork document into the 3D gallery artwork specification
  */
-export function mapSanityArtworkTo3D(doc, slotIndex = 0) {
-  // If explicitly vaulted / unhung from the 3D exhibition, skip rendering
-  if (doc.virtualGallery?.showIn3D === false || doc.virtualGallery?.unhung === true) {
+export function mapSanityArtworkTo3D(doc, slotIndex = 0, includeUnhung = false) {
+  const isExplicitlyUnhung = doc.virtualGallery?.unhung === true || doc.virtualGallery?.showIn3D === false || doc.virtualGallery?.isHung === false;
+  const hasPlacement = !!(doc.virtualGallery?.wallId && doc.virtualGallery?.position);
+
+  // If newly uploaded without placement or explicitly unhung, it's not hung in 3D
+  const isHung = !isExplicitlyUnhung && (hasPlacement || doc.virtualGallery?.isHung === true);
+
+  if (!isHung && !includeUnhung) {
     return null;
   }
 
@@ -132,15 +149,15 @@ export function mapSanityArtworkTo3D(doc, slotIndex = 0) {
     finalHeightIn = parsed.heightIn;
   }
 
-  // Determine wall placement: custom virtualGallery override if set, else assign next slot
+  // Determine wall placement: custom virtualGallery override if set, else assign next slot if hung
   const slot = HALL_SLOTS[slotIndex % HALL_SLOTS.length];
-  const wallId = doc.virtualGallery?.wallId || slot.wallId;
+  const wallId = doc.virtualGallery?.wallId || (isHung ? slot.wallId : null);
   const position = doc.virtualGallery?.position
     ? [doc.virtualGallery.position.x, doc.virtualGallery.position.y || ART_HANG_CENTER, doc.virtualGallery.position.z]
-    : slot.position;
+    : (isHung ? slot.position : null);
   const rotation = doc.virtualGallery?.rotationY !== undefined
     ? [0, doc.virtualGallery.rotationY, 0]
-    : slot.rotation;
+    : (isHung ? slot.rotation : [0, 0, 0]);
 
   // High-performance WebP URLs from Sanity CDN routed through image proxy for universal WebGL CORS compatibility
   const rawUrl = doc.mainImage?.asset?.url || '';
@@ -184,6 +201,8 @@ export function mapSanityArtworkTo3D(doc, slotIndex = 0) {
     rotation,
     price: doc.price,
     status: doc.status || 'available',
+    isHung,
+    unhung: !isHung,
   };
 }
 
@@ -213,13 +232,41 @@ export const SANITY_ARTWORKS_QUERY = `*[_type == "artwork" && (!defined(status) 
   virtualGallery
 }`;
 
+export const SANITY_ALL_ARTWORKS_QUERY = `*[_type == "artwork"] | order(_createdAt desc) {
+  _id,
+  title,
+  slug,
+  sku,
+  price,
+  startingPrice,
+  status,
+  dimensions,
+  material,
+  year,
+  description,
+  "artistName": artist->name,
+  "artistBio": artist->bio,
+  mainImage {
+    asset-> {
+      _id,
+      url,
+      metadata {
+        dimensions
+      }
+    }
+  },
+  virtualGallery
+}`;
+
 /**
- * Fetch all artworks from Sanity Content Lake and map them to 3D gallery specifications
+ * Fetch artworks from Sanity Content Lake.
+ * @param {boolean} includeUnhung - When true, returns all artworks including unhung/vault items for curator management.
  */
-export async function fetchSanityArtworks() {
-  const docs = await sanityClient.fetch(SANITY_ARTWORKS_QUERY);
+export async function fetchSanityArtworks(includeUnhung = false) {
+  const query = includeUnhung ? SANITY_ALL_ARTWORKS_QUERY : SANITY_ARTWORKS_QUERY;
+  const docs = await sanityClient.fetch(query);
   if (!Array.isArray(docs) || docs.length === 0) {
     throw new Error('No artworks returned from Sanity');
   }
-  return docs.map((doc, idx) => mapSanityArtworkTo3D(doc, idx)).filter(Boolean);
+  return docs.map((doc, idx) => mapSanityArtworkTo3D(doc, idx, includeUnhung)).filter(Boolean);
 }
